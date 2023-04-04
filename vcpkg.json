@@ -1,0 +1,16 @@
+{
+    "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+    "name": "vanim",
+    "version": "0.0.0",
+    "dependencies": [
+        "catch2",
+        "sdl2",
+        "gl3w",
+        "boost",
+        "jemalloc",
+        "tbb",
+        "blosc",
+        "lz4",
+        "zstd"
+    ]
+}

@@ -1,0 +1,17 @@
+﻿---
+BasedOnStyle: Microsoft
+AccessModifierOffset: '-4'
+Language: Cpp
+PenaltyBreakAssignment: '20'
+PenaltyBreakBeforeFirstCallParameter: '40'
+PenaltyBreakComment: '80'
+PenaltyBreakString: '50'
+PenaltyBreakTemplateDeclaration: '5'
+PenaltyExcessCharacter: '1'
+PenaltyReturnTypeOnItsOwnLine: '22'
+PointerAlignment: Right
+ReflowComments: 'true'
+SortIncludes: 'true'
+SortUsingDeclarations: 'true'
+UseTab: Never
+...
