@@ -11,6 +11,7 @@
         "tbb",
         "blosc",
         "lz4",
-        "zstd"
+        "zstd",
+        "mio"
     ]
 }

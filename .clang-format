@@ -7,7 +7,7 @@ PenaltyBreakBeforeFirstCallParameter: '40'
 PenaltyBreakComment: '80'
 PenaltyBreakString: '50'
 PenaltyBreakTemplateDeclaration: '5'
-PenaltyExcessCharacter: '1'
+PenaltyExcessCharacter: '0'
 PenaltyReturnTypeOnItsOwnLine: '22'
 PointerAlignment: Right
 ReflowComments: 'true'

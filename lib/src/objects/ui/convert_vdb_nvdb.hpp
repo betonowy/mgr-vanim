@@ -2,11 +2,11 @@
 
 #include <scene/object.hpp>
 
-#include <vector>
 #include <filesystem>
 #include <functional>
 #include <future>
 #include <variant>
+#include <vector>
 
 namespace objects::ui
 {
@@ -16,8 +16,8 @@ public:
     convert_vdb_nvdb(std::filesystem::path);
     ~convert_vdb_nvdb() override;
 
-    void init(scene::object_context&) override;
-    void update(scene::object_context&, float) override;
+    void init(scene::object_context &) override;
+    void update(scene::object_context &, float) override;
 
     struct job_data
     {

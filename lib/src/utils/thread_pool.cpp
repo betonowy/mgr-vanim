@@ -37,7 +37,7 @@ thread_pool::thread_pool(size_t count)
         });
     }
 
-    std::cout << __FUNCTION__ << ": " << count << " workers started.\n";
+    std::cout << __func__ << ": " << count << " workers started.\n";
 }
 
 thread_pool::~thread_pool()

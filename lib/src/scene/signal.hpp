@@ -8,4 +8,4 @@ enum class signal_e
     EXIT_APPLICATION,
     RELOAD_SHADERS,
 };
-}
+} // namespace scene

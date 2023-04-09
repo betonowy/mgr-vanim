@@ -23,8 +23,7 @@ convert_vdb_nvdb::~convert_vdb_nvdb() = default;
 
 namespace
 {
-convert_vdb_nvdb::job_result convert_vdb_nvdb_job(std::vector<std::filesystem::path> files, size_t initial_count,
-                                                  std::shared_ptr<utils::thread_pool> thread_pool)
+convert_vdb_nvdb::job_result convert_vdb_nvdb_job(std::vector<std::filesystem::path> files, size_t initial_count, std::shared_ptr<utils::thread_pool> thread_pool)
 {
     convert_vdb_nvdb::job_result res;
 
@@ -59,7 +58,7 @@ convert_vdb_nvdb::job_result convert_vdb_nvdb_job(std::vector<std::filesystem::p
     {
         std::stringstream ss;
         ss << '[' << current_processed_count << '/' << initial_count << "] Processed " + file.filename().string();
-        res.description =  ss.str();
+        res.description = ss.str();
     }
 
     return res;
@@ -91,8 +90,8 @@ void convert_vdb_nvdb::init(scene::object_context &ctx)
         return res;
     };
 
-    _current_status.next_job = std::make_unique<decltype(_current_status.next_job)::element_type>(
-        ctx.generic_thread_pool().enqueue(std::move(directory_job)));
+    _current_status.next_job =
+        std::make_unique<decltype(_current_status.next_job)::element_type>(ctx.generic_thread_pool().enqueue(std::move(directory_job)));
 }
 
 void convert_vdb_nvdb::update(scene::object_context &ctx, float delta_time)

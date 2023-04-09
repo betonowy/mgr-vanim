@@ -12,7 +12,7 @@ void popup::update(scene::object_context &, float)
     center.x /= 2;
     center.y /= 2;
 
-    ImGui::SetNextWindowSizeConstraints(ImVec2(250.f, 10.f), ImVec2(250.f, 1000.f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(_width, 10.f), ImVec2(_width, 1000.f));
     ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 
     ImGui::OpenPopup(_title.c_str(), ImGuiPopupFlags_NoOpenOverExistingPopup);

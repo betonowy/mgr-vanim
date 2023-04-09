@@ -97,7 +97,10 @@ void file_dialog::update(scene::object_context &, float)
                     std::filesystem::directory_iterator dir_it(_current_path);
                     _directoryListing.clear();
 
-                    for (auto entry : dir_it) { _directoryListing.push_back(dir_it->path().filename()); }
+                    for (auto entry : dir_it)
+                    {
+                        _directoryListing.push_back(dir_it->path().filename());
+                    }
 
                     std::sort(_directoryListing.begin(), _directoryListing.end());
                     break;

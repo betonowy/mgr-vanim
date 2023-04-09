@@ -2,5 +2,5 @@
 
 namespace vanim
 {
-    void run();
+void run();
 }

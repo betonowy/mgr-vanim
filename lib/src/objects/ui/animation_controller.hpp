@@ -11,10 +11,10 @@ class animation_controller : public scene::object
 public:
     virtual ~animation_controller();
 
-    void init(scene::object_context&) override;
-    void update(scene::object_context&, float) override;
-private:
+    void init(scene::object_context &) override;
+    void update(scene::object_context &, float) override;
 
+private:
     std::vector<float> _buffer;
     size_t _current_buffer_index;
 

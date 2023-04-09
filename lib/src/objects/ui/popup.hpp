@@ -20,6 +20,11 @@ public:
         }
     }
 
+    void set_width(int value)
+    {
+        _width = value;
+    }
+
     virtual ~popup();
 
     void update(scene::object_context &, float) override;
@@ -28,5 +33,6 @@ private:
     std::function<void()> _callback;
     std::string _title;
     std::string _description;
+    int _width = 250;
 };
 } // namespace objects::ui
