@@ -92,6 +92,11 @@ bool scene::loop(float delta_time)
         _context._objects.erase(std::remove_if(begin, end, cond), end);
     }
 
+    for (const auto &object : _context._objects_to_delete)
+    {
+        object->on_destroy(_context);
+    }
+
     _context._objects_to_delete.clear();
 
     return true;

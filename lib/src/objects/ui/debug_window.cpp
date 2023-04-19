@@ -39,7 +39,7 @@ void debug_window::update(scene::object_context &ctx, float delta_time)
         _current_buffer_index = 0;
     }
 
-    ImGui::Begin("Debug Window", &_open);
+    if (ImGui::Begin("Debug Window", &_open))
     {
         {
             ImGui::Text("FPS Sample: %.1f", sample_fps);
@@ -76,7 +76,7 @@ void debug_window::update(scene::object_context &ctx, float delta_time)
 
     if (_fps_soft_cap)
     {
-        _wait_time = glm::mix(glm::max(0.03f - delta_time, 0.f), _wait_time, 0.8f);
+        _wait_time = glm::mix(glm::max(0.02f - delta_time, 0.f), _wait_time, 0.8f);
         std::this_thread::sleep_for(std::chrono::microseconds(static_cast<size_t>(_wait_time * 1e6f)));
     }
 

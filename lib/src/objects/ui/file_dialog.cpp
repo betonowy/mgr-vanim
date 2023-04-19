@@ -38,7 +38,7 @@ void file_dialog::update(scene::object_context &, float)
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::SetNextWindowPos(ImVec2());
 
-    ImGui::Begin("File Dialog", nullptr, ImGuiWindowFlags_NoTitleBar);
+    if (ImGui::Begin("File Dialog", nullptr, ImGuiWindowFlags_NoTitleBar))
     {
 
         ImGui::Text("Directory: %s", _current_path.c_str());

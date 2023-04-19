@@ -11,6 +11,10 @@ void object::update(object_context &, float)
 {
 }
 
+void object::on_destroy(object_context &)
+{
+}
+
 void object::signal(object_context &, signal_e)
 {
 }

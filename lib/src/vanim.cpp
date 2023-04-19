@@ -97,7 +97,7 @@ void run()
             auto scene_initializer = [](scene::object_context &ctx) {
                 ctx.add_object(std::make_shared<objects::ui::debug_window>());
                 ctx.add_object(std::make_shared<objects::ui::main_menu>());
-                ctx.add_object(std::make_shared<objects::vdb::volume_resource_base>());
+                // ctx.add_object(std::make_shared<objects::vdb::volume_resource_base>());
                 ctx.add_object(std::make_shared<objects::misc::world_data>());
             };
 

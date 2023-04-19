@@ -4,10 +4,13 @@
 
 #include <scene/object_context.hpp>
 
+#include "../vdb/nano_vdb_resource.hpp"
 #include "../vdb/volume_resource_base.hpp"
+#include "animation_controller.hpp"
 #include "convert_vdb_nvdb.hpp"
 #include "debug_window.hpp"
 #include "file_dialog.hpp"
+#include "popup.hpp"
 
 namespace objects::ui
 {
@@ -39,12 +42,49 @@ void main_menu::update(scene::object_context &ctx, float)
     {
         if (ImGui::BeginMenu("File"))
         {
-            if (ImGui::MenuItem("Convert OpenVDB to NanoVDB"))
+            if (ImGui::BeginMenu("Convert OpenVDB to NanoVDB..."))
             {
-                ctx.add_object(std::make_shared<file_dialog>([ctx = &ctx](std::filesystem::path path) -> bool {
-                    ctx->add_object(std::make_shared<convert_vdb_nvdb>(std::move(path)));
-                    return true;
-                }));
+                if (ImGui::MenuItem("...to 32-bit float grids"))
+                {
+                    ctx.add_object(std::make_shared<file_dialog>([ctx = &ctx](std::filesystem::path path) -> bool {
+                        ctx->add_object(std::make_shared<convert_vdb_nvdb>(std::move(path), converter::nvdb_format::F32, converter::nvdb_error_method::relative, 0.01));
+                        return true;
+                    }));
+                }
+
+                if (ImGui::MenuItem("...to 16-bit float grids"))
+                {
+                    ctx.add_object(std::make_shared<file_dialog>([ctx = &ctx](std::filesystem::path path) -> bool {
+                        ctx->add_object(std::make_shared<convert_vdb_nvdb>(std::move(path), converter::nvdb_format::F16, converter::nvdb_error_method::relative, 0.01));
+                        return true;
+                    }));
+                }
+
+                if (ImGui::MenuItem("...to 8-bit float grids"))
+                {
+                    ctx.add_object(std::make_shared<file_dialog>([ctx = &ctx](std::filesystem::path path) -> bool {
+                        ctx->add_object(std::make_shared<convert_vdb_nvdb>(std::move(path), converter::nvdb_format::F8, converter::nvdb_error_method::relative, 0.01));
+                        return true;
+                    }));
+                }
+
+                if (ImGui::MenuItem("...to 4-bit float grids"))
+                {
+                    ctx.add_object(std::make_shared<file_dialog>([ctx = &ctx](std::filesystem::path path) -> bool {
+                        ctx->add_object(std::make_shared<convert_vdb_nvdb>(std::move(path), converter::nvdb_format::F4, converter::nvdb_error_method::relative, 0.01));
+                        return true;
+                    }));
+                }
+
+                if (ImGui::MenuItem("...to variable-bit float grids"))
+                {
+                    ctx.add_object(std::make_shared<file_dialog>([ctx = &ctx](std::filesystem::path path) -> bool {
+                        ctx->add_object(std::make_shared<convert_vdb_nvdb>(std::move(path), converter::nvdb_format::FN, converter::nvdb_error_method::relative, 0.01));
+                        return true;
+                    }));
+                }
+
+                ImGui::EndMenu();
             }
 
             if (ImGui::MenuItem("Convert OpenVDB to custom format"))
@@ -53,7 +93,24 @@ void main_menu::update(scene::object_context &ctx, float)
 
             if (ImGui::MenuItem("Open NanoVDB animation"))
             {
-                ctx.add_object(std::make_shared<vdb::volume_resource_base>());
+                for (const auto &object : ctx.find_objects<animation_controller>())
+                {
+                    object->destroy();
+                }
+
+                ctx.share_object(std::make_shared<file_dialog>([ctx = &ctx](std::filesystem::path path) -> bool {
+                    try
+                    {
+                        auto resource = ctx->share_object(std::make_shared<vdb::nano_vdb_resource>(std::move(path)));
+                        ctx->add_object(std::make_shared<animation_controller>(std::move(resource)));
+                        return true;
+                    }
+                    catch (std::exception &e)
+                    {
+                        ctx->add_object(std::make_shared<popup>("Can't load NanoVDB animation", e.what()));
+                        return false;
+                    }
+                }));
             }
 
             if (ImGui::MenuItem("Open custom animation"))

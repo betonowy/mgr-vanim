@@ -37,6 +37,7 @@ public:
 
     virtual void init(object_context &);
     virtual void update(object_context &, float delta_frame);
+    virtual void on_destroy(object_context &);
     virtual void signal(object_context &, signal_e);
     virtual void key(object_context &, key_event);
     virtual void motion(object_context &, motion_event);

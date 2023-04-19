@@ -5,7 +5,7 @@
 
 namespace scene
 {
-object_context::object_context(void *gl_context, SDL_Window *window)
+object_context::object_context(SDL_GLContext gl_context, SDL_Window *window)
     : _cpu_thread_pool(std::make_shared<utils::thread_pool>(/*std::thread::hardware_concurrency() / 2*/ 1)), _gl_thread(std::make_shared<utils::gl_resource_thread>(gl_context, window))
 {
 }

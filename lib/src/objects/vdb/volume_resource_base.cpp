@@ -5,19 +5,94 @@
 #include <scene/object_context.hpp>
 #include <utils/resource_path.hpp>
 
-#include <SDL2/SDL_events.h>
-#include <glm/glm.hpp>
-#include <nanovdb/NanoVDB.h>
-#include <nanovdb/util/IO.h>
-
-#define PNANOVDB_C
-#define PNANOVDB_ADDRESS_32
-#include <nanovdb/PNanoVDB.h>
-
-#include <iostream>
-
 namespace objects::vdb
 {
+void volume_resource_base::set_next_volume_data(std::shared_ptr<gl::shader_storage> data, glm::uvec4 offsets)
+{
+    _volume_data_active = std::move(data);
+    _world_data->set_vdb_data_offsets(offsets);
+}
+
+void volume_resource_base::set_preload_hint(float ms_ahead)
+{
+    _preload_hint = glm::max(ms_ahead, 0.f);
+}
+
+float volume_resource_base::get_preload_hint()
+{
+    return _preload_hint;
+}
+
+void volume_resource_base::set_frame_rate(float value)
+{
+    _frame_rate = value;
+}
+
+float volume_resource_base::get_frame_rate()
+{
+    return _frame_rate;
+}
+
+float volume_resource_base::get_current_time()
+{
+    return _current_time;
+}
+
+float volume_resource_base::get_min_time()
+{
+    return _min_time;
+}
+
+float volume_resource_base::get_max_time()
+{
+    return _max_time;
+}
+
+void volume_resource_base::set_frame_range(float min, float max)
+{
+    _min_time = min, _max_time = max;
+}
+
+void volume_resource_base::signal_force_load()
+{
+    ++_force_loads;
+}
+
+size_t volume_resource_base::get_force_loads()
+{
+    return _force_loads;
+}
+
+void volume_resource_base::signal_ad_hoc_load()
+{
+    ++_ad_hoc_loads;
+}
+
+size_t volume_resource_base::get_ad_hoc_loads()
+{
+    return _ad_hoc_loads;
+}
+
+void volume_resource_base::set_play_animation(bool value)
+{
+    _play_animation = value;
+}
+
+void volume_resource_base::set_no_unload(bool value)
+{
+    _no_unload = value;
+}
+
+bool volume_resource_base::get_no_unload()
+{
+    return _no_unload;
+}
+
+bool volume_resource_base::get_play_animation()
+{
+    return _play_animation;
+}
+
 void volume_resource_base::init(scene::object_context &ctx)
 {
     using source = gl::shader::source;
@@ -44,9 +119,6 @@ void volume_resource_base::init(scene::object_context &ctx)
     _vertex_buffer->buffer_data(vertices, sizeof(vertices), GL_STATIC_DRAW);
     _vertex_array->setup({attr{0, 2, GL_FLOAT, false, sizeof(glm::vec2), nullptr}}, _vertex_buffer);
 
-    _volume_data_active = std::make_shared<gl::shader_storage>();
-    _volume_data_inactive = std::make_shared<gl::shader_storage>();
-
     {
         auto objects = ctx.find_objects<objects::misc::world_data>();
 
@@ -57,43 +129,59 @@ void volume_resource_base::init(scene::object_context &ctx)
 
         _world_data = std::move(objects[0]);
     }
-    {
-        auto t1 = std::chrono::steady_clock::now();
 
-        auto grids = nanovdb::io::readGrids("/home/araara/Documents/vdb-animations/Fire_01/embergen_fire_a_69.nvdb");
+    // std::function vdb_task = [] {
+    //     volume_data data{
+    //         .ssbo = std::make_shared<gl::shader_storage>(),
+    //         .offsets = glm::uvec4(~0),
+    //     };
 
-        size_t grids_size = 0;
-        std::vector<size_t> offsets;
+    //     auto grids = nanovdb::io::readGrids("/home/araara/Documents/vdb-animations/Fire_01/embergen_fire_a_69.nvdb");
+    //     size_t grids_size = 0;
+    //     std::vector<size_t> offsets;
 
-        for (auto &grid : grids)
-        {
-            offsets.push_back(grids_size);
-            grids_size += grid.size();
-            assert(grids_size % 4 == 0); // GPU can support 4-byte aligned grids only
-        }
+    //     for (auto &grid : grids)
+    //     {
+    //         offsets.push_back(grids_size);
+    //         grids_size += grid.size();
+    //         assert(grids_size % 4 == 0); // GPU can support 4-byte aligned grids only
+    //     }
 
-        _volume_data_active->buffer_data(nullptr, grids_size, GL_STATIC_DRAW);
+    //     data.ssbo->buffer_data(nullptr, grids_size, GL_STATIC_DRAW);
 
-        glm::uvec4 uvec_offsets(~0);
+    //     for (size_t i = 0; i < grids.size(); ++i)
+    //     {
+    //         data.ssbo->buffer_sub_data(grids[i].data(), grids[i].size(), offsets[i]);
+    //         data.offsets[i] = offsets[i];
+    //     }
 
-        for (size_t i = 0; i < grids.size(); ++i)
-        {
-            _volume_data_active->buffer_sub_data(grids[i].data(), grids[i].size(), offsets[i]);
-            uvec_offsets[i] = offsets[i];
-        }
+    //     glFinish(); // glFlush might be enough
 
-        _world_data->set_vdb_data_offsets(uvec_offsets);
+    //     return data;
+    // };
 
-        auto t2 = std::chrono::steady_clock::now();
-
-        std::cout << "Loading took: " << std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count() / 1000.f << " ms\n";
-    }
+    // _incoming_volume_data = ctx.gl_thread().enqueue(std::move(vdb_task));
 }
 
-void volume_resource_base::update(scene::object_context &ctx, float)
+void volume_resource_base::update(scene::object_context &ctx, float delta_time)
 {
+    if (_play_animation)
+    {
+        _current_time += delta_time;
+
+        if (_current_time >= _max_time)
+        {
+            _current_time = _min_time;
+        }
+
+        if (!_volume_data_active)
+        {
+            return;
+        }
+    }
+
     _world_data->update_buffer();
-    // render
+
     try
     {
         glBindVertexArray(*_vertex_array);

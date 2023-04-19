@@ -25,11 +25,12 @@ int raycast_value(int i, out float value)
     pnanovdb_vec3_t pos = pnanovdb_hdda_ray_start(origin, tmin, direction);
     pnanovdb_coord_t ijk = pnanovdb_hdda_pos_to_ijk(PNANOVDB_REF(pos));
 
-    pnanovdb_address_t address = pnanovdb_readaccessor_get_value_address(PNANOVDB_GRID_TYPE_FLOAT, vdb[i].buf, vdb[i].accessor, PNANOVDB_REF(ijk));
-    float v0 = pnanovdb_read_float(vdb[i].buf, address);
+    uint level;
+    pnanovdb_address_t address = pnanovdb_readaccessor_get_value_address_and_level(vdb[i].grid_type, vdb[i].buf, vdb[i].accessor, PNANOVDB_REF(ijk), PNANOVDB_REF(level));
+    float v0 = pnanovdb_root_read_float_typed(vdb[i].grid_type, vdb[i].buf, address, ijk, level);
 
     pnanovdb_int32_t dim =
-        pnanovdb_uint32_as_int32(pnanovdb_readaccessor_get_dim(PNANOVDB_GRID_TYPE_FLOAT, vdb[i].buf, vdb[i].accessor, PNANOVDB_REF(ijk)));
+        pnanovdb_uint32_as_int32(pnanovdb_readaccessor_get_dim(vdb[i].grid_type, vdb[i].buf, vdb[i].accessor, PNANOVDB_REF(ijk)));
     pnanovdb_hdda_t hdda;
     pnanovdb_hdda_init(PNANOVDB_REF(hdda), origin, tmin, direction, tmax, dim);
 
@@ -37,7 +38,7 @@ int raycast_value(int i, out float value)
     {
         pnanovdb_vec3_t pos_start = pnanovdb_hdda_ray_start(origin, hdda.tmin + 0.001f, direction);
         ijk = pnanovdb_hdda_pos_to_ijk(PNANOVDB_REF(pos_start));
-        dim = pnanovdb_uint32_as_int32(pnanovdb_readaccessor_get_dim(PNANOVDB_GRID_TYPE_FLOAT, vdb[i].buf, vdb[i].accessor, PNANOVDB_REF(ijk)));
+        dim = pnanovdb_uint32_as_int32(pnanovdb_readaccessor_get_dim(vdb[i].grid_type, vdb[i].buf, vdb[i].accessor, PNANOVDB_REF(ijk)));
         pnanovdb_hdda_update(PNANOVDB_REF(hdda), origin, direction, dim);
 
         if (hdda.dim > 1 || !pnanovdb_readaccessor_is_active(vdb[i].grid_type, vdb[i].buf, vdb[i].accessor, PNANOVDB_REF(ijk)))
@@ -49,8 +50,8 @@ int raycast_value(int i, out float value)
         {
             ijk = hdda.voxel;
             pnanovdb_address_t address =
-                pnanovdb_readaccessor_get_value_address(PNANOVDB_GRID_TYPE_FLOAT, vdb[i].buf, vdb[i].accessor, PNANOVDB_REF(ijk));
-            PNANOVDB_DEREF(v) = pnanovdb_read_float(vdb[i].buf, address);
+                pnanovdb_readaccessor_get_value_address_and_level(vdb[i].grid_type, vdb[i].buf, vdb[i].accessor, PNANOVDB_REF(ijk), level);
+            PNANOVDB_DEREF(v) = pnanovdb_root_read_float_typed(vdb[i].grid_type, vdb[i].buf, address, ijk, level);
 
             if (PNANOVDB_DEREF(v) > 0.0f)
             {

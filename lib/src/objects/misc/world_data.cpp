@@ -10,7 +10,7 @@ namespace objects::misc
 {
 void world_data::init(scene::object_context &ctx)
 {
-    _camera.set_origin(glm::vec3(-30, 60, 60));
+    _camera.set_origin(glm::vec3(-30, -60, 60));
     _camera.set_dir(glm::vec3(1, 0, 0));
     _camera.set_fov(70);
     _camera.set_aspect(static_cast<float>(ctx.window_size().x) / static_cast<float>(ctx.window_size().y));
