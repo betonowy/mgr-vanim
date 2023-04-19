@@ -5,6 +5,9 @@ set(OPENVDB_CORE_SHARED OFF)
 set(OPENVDB_CORE_STATIC ON)
 set(USE_EXPLICIT_INSTANTIATION OFF)
 
+find_package(blosc CONFIG REQUIRED)
+add_library(Blosc::blosc ALIAS blosc_static)
+
 add_subdirectory(openvdb SYSTEM)
 
 target_link_libraries(openvdb_static INTERFACE zstd::libzstd_static lz4::lz4)

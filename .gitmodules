@@ -3,8 +3,7 @@
 	url = https://github.com/microsoft/vcpkg.git
 [submodule "thirdparty/openvdb"]
 	path = thirdparty/openvdb
-	url = https://github.com/AcademySoftwareFoundation/openvdb.git
-	tag = v10.0.1
+	url = https://github.com/betonowy/openvdb.git
 [submodule "thirdparty/imgui"]
 	path = thirdparty/imgui
 	url = https://github.com/ocornut/imgui
