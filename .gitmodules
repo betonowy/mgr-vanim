@@ -1,9 +1,10 @@
 [submodule "thirdparty/vcpkg"]
 	path = thirdparty/vcpkg
 	url = https://github.com/microsoft/vcpkg.git
-[submodule "thirdparty/openvdb"]
-	path = thirdparty/openvdb
-	url = https://github.com/betonowy/openvdb.git
+	branch = master
 [submodule "thirdparty/imgui"]
 	path = thirdparty/imgui
 	url = https://github.com/ocornut/imgui
+[submodule "thirdparty/openvdb"]
+	path = thirdparty/openvdb
+	url = https://github.com/betonowy/openvdb
