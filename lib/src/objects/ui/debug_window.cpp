@@ -50,7 +50,6 @@ void debug_window::update(scene::object_context &ctx, float delta_time)
             ImGui::Text("Average ms: %.2f", average * 1e3f);
             ImGui::Text("Minimum ms: %.2f", max_element * 1e3f);
             ImGui::Text("Maximum ms: %.2f", min_element * 1e3f);
-            ImGui::Checkbox("FPS cap", &_fps_soft_cap);
         }
 
         ImGui::Separator();
@@ -72,9 +71,54 @@ void debug_window::update(scene::object_context &ctx, float delta_time)
             {
                 ImGui::Text("GPU buffer memory: %ld bytes", gpu_mem_b);
             }
-
-            ImGui::Checkbox("Auto-recompile shaders", &_auto_recompile);
         }
+
+        {
+            auto gpu_mem = utils::gpu_buffer_memory_peak_high();
+            auto [gpu_mem_kb_all, gpu_mem_b] = std::div(gpu_mem, 1024l);
+            auto [gpu_mem_mb_all, gpu_mem_kb] = std::div(gpu_mem_kb_all, 1024l);
+
+            if (gpu_mem_mb_all > 0)
+            {
+                ImGui::Text("GPU buffer memory peak high: %ld MiB %ld KiB %ld bytes", gpu_mem_mb_all, gpu_mem_kb, gpu_mem_b);
+            }
+            else if (gpu_mem_kb_all > 0)
+            {
+                ImGui::Text("GPU buffer memory peak high: %ld KiB %ld bytes", gpu_mem_kb, gpu_mem_b);
+            }
+            else
+            {
+                ImGui::Text("GPU buffer memory peak high: %ld bytes", gpu_mem_b);
+            }
+        }
+
+        {
+            auto gpu_mem = utils::gpu_buffer_memory_peak_low();
+            auto [gpu_mem_kb_all, gpu_mem_b] = std::div(gpu_mem, 1024l);
+            auto [gpu_mem_mb_all, gpu_mem_kb] = std::div(gpu_mem_kb_all, 1024l);
+
+            if (gpu_mem_mb_all > 0)
+            {
+                ImGui::Text("GPU buffer memory peak low: %ld MiB %ld KiB %ld bytes", gpu_mem_mb_all, gpu_mem_kb, gpu_mem_b);
+            }
+            else if (gpu_mem_kb_all > 0)
+            {
+                ImGui::Text("GPU buffer memory peak low: %ld KiB %ld bytes", gpu_mem_kb, gpu_mem_b);
+            }
+            else
+            {
+                ImGui::Text("GPU buffer memory peak low: %ld bytes", gpu_mem_b);
+            }
+        }
+
+        if (ImGui::Button("Reset GPU statistics"))
+        {
+            utils::gpu_buffer_memory_peak_reset();
+        }
+
+        ImGui::Checkbox("FPS cap", &_fps_soft_cap);
+        ImGui::SameLine();
+        ImGui::Checkbox("Auto-recompile shaders", &_auto_recompile);
     }
     ImGui::End();
 

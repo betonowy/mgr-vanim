@@ -41,6 +41,9 @@ public:
     float get_min_time();
     float get_max_time();
 
+    const std::vector<std::string> &get_grid_names();
+    void set_grid_names(std::vector<std::string>);
+
     void signal_force_load();
     size_t get_force_loads();
 
@@ -78,6 +81,8 @@ private:
 
     std::shared_ptr<objects::ui::popup> _exception_popup;
     std::shared_ptr<objects::misc::world_data> _world_data;
+
+    std::vector<std::string> _grid_names;
 
     std::string _last_error;
 

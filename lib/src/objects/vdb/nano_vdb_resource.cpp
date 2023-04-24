@@ -70,9 +70,37 @@ void nano_vdb_resource::init(scene::object_context &ctx)
 
         size_t buffer_size = 0;
 
-        for (const auto &[ptr, size] : grids)
+        std::vector<std::string> converted_names;
+
+        for (const auto &[_, size, name, type] : grids)
         {
             buffer_size += size;
+
+            std::string converted_name;
+
+            switch (type)
+            {
+            case utils::nvdb_mmap::grid::type_size::unsupported:
+                converted_name = "unsupported format";
+            case utils::nvdb_mmap::grid::type_size::f32:
+                converted_name = "float32";
+            case utils::nvdb_mmap::grid::type_size::f16:
+                converted_name = "float16";
+            case utils::nvdb_mmap::grid::type_size::f8:
+                converted_name = "float8";
+            case utils::nvdb_mmap::grid::type_size::f4:
+                converted_name = "float4";
+            case utils::nvdb_mmap::grid::type_size::fn:
+                converted_name = "variable bit float";
+                break;
+            }
+
+            converted_name += ": ";
+            converted_name += name;
+
+            converted_names.emplace_back(std::move(converted_name));
+
+            set_grid_names(std::move(converted_names));
         }
 
         if (buffer_size > max_buffer_size)
@@ -166,14 +194,12 @@ void nano_vdb_resource::update(scene::object_context &ctx, float delta_time)
 
     while (frame_count < frames_ahead)
     {
-        std::cout << "more\n";
         _free_frames.push_back(frame{.ssbo = std::make_shared<gl::shader_storage>()});
         ++frame_count;
     }
 
     while (frame_count > frames_ahead && !_free_frames.empty())
     {
-        std::cout << "less\n";
         _free_frames.pop_back();
         --frame_count;
     }

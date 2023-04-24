@@ -48,6 +48,16 @@ float volume_resource_base::get_max_time()
     return _max_time;
 }
 
+const std::vector<std::string> &volume_resource_base::get_grid_names()
+{
+    return _grid_names;
+}
+
+void volume_resource_base::set_grid_names(std::vector<std::string> grid_names)
+{
+    _grid_names = std::move(grid_names);
+}
+
 void volume_resource_base::set_frame_range(float min, float max)
 {
     _min_time = min, _max_time = max;

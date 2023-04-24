@@ -37,6 +37,12 @@ void animation_controller::update(scene::object_context &ctx, float)
             _volume_resource->set_preload_hint(preload);
         }
 
+        ImGui::Text("Buffer count: %d", static_cast<int>(_volume_resource->get_preload_hint() * _volume_resource->get_frame_rate() + 1));
+        ImGui::SameLine();
+        ImGui::Text("Ad hoc loads: %lu", _volume_resource->get_ad_hoc_loads());
+        ImGui::SameLine();
+        ImGui::Text("Force loads: %lu", _volume_resource->get_force_loads());
+
         {
             bool no_unload = _volume_resource->get_no_unload();
             ImGui::Checkbox("No unload", &no_unload);
@@ -51,52 +57,11 @@ void animation_controller::update(scene::object_context &ctx, float)
             _volume_resource->set_play_animation(play_animation);
         }
 
+#ifdef VANIM_WINDOWS
         ImGui::Text("Ad hoc loads: %llu", _volume_resource->get_ad_hoc_loads());
-
         ImGui::Text("Force loads: %llu", _volume_resource->get_force_loads());
-
-        if (ImGui::Button("Reset GPU statistics"))
-        {
-            utils::gpu_buffer_memory_peak_reset();
-        }
-
-        {
-            auto gpu_mem = utils::gpu_buffer_memory_peak_high();
-            auto [gpu_mem_kb_all, gpu_mem_b] = std::div(gpu_mem, 1024l);
-            auto [gpu_mem_mb_all, gpu_mem_kb] = std::div(gpu_mem_kb_all, 1024l);
-
-            if (gpu_mem_mb_all > 0)
-            {
-                ImGui::Text("GPU buffer memory peak high: %ld MiB %ld KiB %ld bytes", gpu_mem_mb_all, gpu_mem_kb, gpu_mem_b);
-            }
-            else if (gpu_mem_kb_all > 0)
-            {
-                ImGui::Text("GPU buffer memory peak high: %ld KiB %ld bytes", gpu_mem_kb, gpu_mem_b);
-            }
-            else
-            {
-                ImGui::Text("GPU buffer memory peak high: %ld bytes", gpu_mem_b);
-            }
-        }
-
-        {
-            auto gpu_mem = utils::gpu_buffer_memory_peak_low();
-            auto [gpu_mem_kb_all, gpu_mem_b] = std::div(gpu_mem, 1024l);
-            auto [gpu_mem_mb_all, gpu_mem_kb] = std::div(gpu_mem_kb_all, 1024l);
-
-            if (gpu_mem_mb_all > 0)
-            {
-                ImGui::Text("GPU buffer memory peak low: %ld MiB %ld KiB %ld bytes", gpu_mem_mb_all, gpu_mem_kb, gpu_mem_b);
-            }
-            else if (gpu_mem_kb_all > 0)
-            {
-                ImGui::Text("GPU buffer memory peak low: %ld KiB %ld bytes", gpu_mem_kb, gpu_mem_b);
-            }
-            else
-            {
-                ImGui::Text("GPU buffer memory peak low: %ld bytes", gpu_mem_b);
-            }
-        }
+#else
+#endif
     }
     ImGui::End();
 }

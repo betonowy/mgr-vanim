@@ -48,6 +48,13 @@ nvdb_mmap::nvdb_mmap(std::string path) : _source(path)
         throw std::runtime_error("An unrecoverable error in nanovdb::Segment::read:\n\tIncompatible file format: " + ss.str());
     }
 
+    if (header->gridCount > MAX_GRIDS)
+    {
+        throw std::runtime_error("Grid count exceeds supported MAX_GRIDS. Increase constant size and "
+                                 "rebuild.\n(header->gridCount == " +
+                                 std::to_string(header->gridCount) + ") > (MAX_GRIDS == " + std::to_string(MAX_GRIDS) + ')');
+    }
+
     std::array<grid_meta_t, MAX_GRIDS> metadata;
 
     for (size_t i = 0; i < header->gridCount; ++i)
@@ -56,6 +63,7 @@ nvdb_mmap::nvdb_mmap(std::string path) : _source(path)
         read_offset += sizeof(meta_t);
 
         metadata[i].grid_name = std::string_view(_source.data() + read_offset, metadata[i].metadata->nameSize);
+
         read_offset += metadata[i].metadata->nameSize;
     }
 
@@ -65,6 +73,25 @@ nvdb_mmap::nvdb_mmap(std::string path) : _source(path)
     {
         _grids[i].ptr = _source.data() + read_offset;
         _grids[i].size = metadata[i].metadata->gridSize;
+        _grids[i].name = metadata[i].grid_name;
+        _grids[i].type = [&]() -> grid::type_size {
+            switch (metadata[i].metadata->gridType)
+            {
+            case nanovdb::GridType::Float:
+                return grid::type_size::f32;
+            case nanovdb::GridType::Fp4:
+                return grid::type_size::f4;
+            case nanovdb::GridType::Fp8:
+                return grid::type_size::f8;
+            case nanovdb::GridType::Fp16:
+                return grid::type_size::f16;
+            case nanovdb::GridType::FpN:
+                return grid::type_size::fn;
+            default:
+                return grid::type_size::unsupported;
+            }
+        }();
+
         read_offset += metadata[i].metadata->fileSize;
     }
 
