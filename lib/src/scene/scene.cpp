@@ -2,6 +2,7 @@
 #include "signal.h"
 
 #include <algorithm>
+#include <iterator>
 
 namespace scene
 {

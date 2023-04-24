@@ -6,6 +6,8 @@
 #include <gl/buffer_indices.hpp>
 #include <scene/object_context.hpp>
 
+#include <numbers>
+
 namespace
 {
 struct buffer_layout

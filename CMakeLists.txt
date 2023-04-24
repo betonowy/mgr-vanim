@@ -1,6 +1,14 @@
 cmake_minimum_required(VERSION 3.24)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(WIN32)
+    set(VCPKG_DEFAULT_TRIPLET x64-windows-static)
+    set(VCPKG_TARGET_TRIPLET x64-windows-static)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    add_compile_definitions(_ITERATOR_DEBUG_LEVEL=0)
+endif()
+
 set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
 
 project(Vanim)

@@ -51,9 +51,9 @@ void animation_controller::update(scene::object_context &ctx, float)
             _volume_resource->set_play_animation(play_animation);
         }
 
-        ImGui::Text("Ad hoc loads: %lu", _volume_resource->get_ad_hoc_loads());
+        ImGui::Text("Ad hoc loads: %llu", _volume_resource->get_ad_hoc_loads());
 
-        ImGui::Text("Force loads: %lu", _volume_resource->get_force_loads());
+        ImGui::Text("Force loads: %llu", _volume_resource->get_force_loads());
 
         if (ImGui::Button("Reset GPU statistics"))
         {

@@ -2,6 +2,7 @@
 
 #include <imgui.h>
 
+#include <stdlib.h>
 #include <utils/scope_guard.hpp>
 
 #include <algorithm>
@@ -9,8 +10,23 @@
 namespace objects::ui
 {
 file_dialog::file_dialog(std::function<bool(std::filesystem::path)> callback, std::string starting_path)
-    : _current_path(std::move(starting_path)), _callback(std::move(callback))
+    : _callback(std::move(callback))
 {
+    if (!starting_path.empty())
+    {
+        _current_path = std::move(starting_path);
+    }
+    else
+    {
+#ifdef VANIM_WINDOWS
+        char *buffer;
+        size_t size;
+        _dupenv_s(&buffer, &size, "UserProfile");
+        _current_path = buffer;
+#else
+        _current_path = std::getenv("HOME");
+#endif
+    }
 }
 
 file_dialog::~file_dialog() = default;
@@ -24,7 +40,7 @@ void file_dialog::init(scene::object_context &)
     {
         if (entry.is_directory())
         {
-            _directoryListing.push_back(dir_it->path().filename());
+            _directoryListing.push_back(dir_it->path().filename().string());
         }
     }
 
@@ -47,7 +63,7 @@ void file_dialog::update(scene::object_context &, float)
 
         if (ImGui::Button("Go up"))
         {
-            _current_path = std::filesystem::path(_current_path).parent_path();
+            _current_path = std::filesystem::path(_current_path).parent_path().string();
             std::filesystem::directory_iterator dir_it(_current_path);
             _directoryListing.clear();
 
@@ -55,7 +71,7 @@ void file_dialog::update(scene::object_context &, float)
             {
                 if (entry.is_directory())
                 {
-                    _directoryListing.push_back(dir_it->path().filename());
+                    _directoryListing.push_back(dir_it->path().filename().string());
                 }
             }
 
@@ -93,13 +109,13 @@ void file_dialog::update(scene::object_context &, float)
 
                 if (ImGui::Selectable(entry.c_str()))
                 {
-                    _current_path = std::filesystem::weakly_canonical(newPath).make_preferred();
+                    _current_path = std::filesystem::weakly_canonical(newPath).make_preferred().string();
                     std::filesystem::directory_iterator dir_it(_current_path);
                     _directoryListing.clear();
 
                     for (auto entry : dir_it)
                     {
-                        _directoryListing.push_back(dir_it->path().filename());
+                        _directoryListing.push_back(dir_it->path().filename().string());
                     }
 
                     std::sort(_directoryListing.begin(), _directoryListing.end());

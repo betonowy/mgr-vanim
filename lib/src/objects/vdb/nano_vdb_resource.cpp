@@ -16,8 +16,18 @@ nano_vdb_resource::nano_vdb_resource(std::filesystem::path path) : _resource_dir
 {
     std::vector<std::pair<int, std::filesystem::path>> nvdb_files;
 
-    auto path_to_frame_number = [r = std::regex("^.*[\\/\\\\].+_(\\d+)\\.nvdb$")](const std::filesystem::path &path) -> int {
-        std::cmatch cm;
+    using regex_type = std::basic_regex<std::filesystem::path::value_type>;
+
+#if VANIM_WINDOWS
+    static constexpr auto regex_pattern = L"^.*[\\/\\\\].+_(\\d+)\\.nvdb$";
+    using match_type = std::wcmatch;
+#else
+    static constexpr auto regex_pattern = "^.*[\\/\\\\].+_(\\d+)\\.nvdb$";
+    using match_type = std::cmatch;
+#endif
+
+    auto path_to_frame_number = [r = regex_type(regex_pattern)](const std::filesystem::path &path) -> int {
+        match_type cm;
 
         if (std::regex_search(path.c_str(), cm, r))
         {

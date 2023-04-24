@@ -48,7 +48,7 @@ convert_vdb_nvdb::job_result convert_vdb_nvdb_job(std::vector<std::filesystem::p
     };
 
     const auto converter_status = converter::convert_to_nvdb(file, format, error, error_method);
-    
+
     res.next_job = std::make_unique<decltype(res.next_job)::element_type>(thread_pool->enqueue(std::move(next_job)));
 
     if (!converter_status.success)
@@ -132,7 +132,11 @@ void convert_vdb_nvdb::update(scene::object_context &ctx, float delta_time)
 
     if (ImGui::Begin("Converting OpenVDB to NanoVDB", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize))
     {
+#ifdef VANIM_WINDOWS
+        ImGui::Text("Directory: %ls", _working_path.c_str());
+#else
         ImGui::Text("Directory: %s", _working_path.c_str());
+#endif
 
         ImGui::PushStyleColor(ImGuiCol_PlotHistogram, 0xffa06040);
 

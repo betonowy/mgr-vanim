@@ -5,8 +5,8 @@ add_library(vanim ${VANIM_SRC})
 target_link_libraries(vanim
     PRIVATE
         SDL2::SDL2-static
-        SDL2::SDL2main
         unofficial::gl3w::gl3w
+        glm::glm
         openvdb_static
         nanovdb
         imgui

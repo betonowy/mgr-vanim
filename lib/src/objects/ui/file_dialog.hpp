@@ -10,10 +10,8 @@ namespace objects::ui
 {
 class file_dialog : public scene::object
 {
-    static constexpr const char *default_path = "/home";
-
 public:
-    file_dialog(std::function<bool(std::filesystem::path)>, std::string = default_path);
+    file_dialog(std::function<bool(std::filesystem::path)>, std::string = {});
 
     ~file_dialog() override;
 

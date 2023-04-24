@@ -6,7 +6,12 @@ set(OPENVDB_CORE_STATIC ON)
 set(USE_EXPLICIT_INSTANTIATION OFF)
 
 find_package(blosc CONFIG REQUIRED)
-add_library(Blosc::blosc ALIAS blosc_static)
+add_library(Blosc::blosc ALIAS blosc)
+
+find_package(Snappy CONFIG REQUIRED)
+get_target_property(BLOSC_LINKED_LIBRARIES blosc INTERFACE_LINK_LIBRARIES)
+list(TRANSFORM BLOSC_LINKED_LIBRARIES REPLACE .+ $<TARGET_FILE:Snappy::snappy> REGEX /lib/snappy.)
+set_property(TARGET blosc PROPERTY INTERFACE_LINK_LIBRARIES "${BLOSC_LINKED_LIBRARIES}")
 
 add_subdirectory(openvdb SYSTEM)
 

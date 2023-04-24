@@ -36,7 +36,7 @@ void debug_window::update(scene::object_context &ctx, float delta_time)
     const auto average_fps = 1.f / average;
     const auto sample_fps = 1.f / delta_time;
 
-    if (++_current_buffer_index > _buffer.size())
+    if (++_current_buffer_index >= _buffer.size())
     {
         _current_buffer_index = 0;
     }

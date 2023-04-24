@@ -1,17 +1,26 @@
 {
     "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
     "name": "vanim",
-    "version": "0.0.0",
+    "version": "0.1.0",
     "dependencies": [
         "catch2",
         "sdl2",
+        "glm",
         "gl3w",
-        "boost",
         "jemalloc",
         "tbb",
         "blosc",
         "lz4",
         "zstd",
-        "mio"
-    ]
+        "mio",
+        "boost-any",
+        "boost-date-time",
+        "boost-interprocess",
+        "boost-iostreams",
+        "boost-ptr-container",
+        "boost-system",
+        "boost-thread",
+        "boost-uuid"
+    ],
+    "builtin-baseline": "231a73946227380d63e3d68d0322a01ea921524a"
 }

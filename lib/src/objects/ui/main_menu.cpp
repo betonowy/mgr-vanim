@@ -137,9 +137,9 @@ void main_menu::update(scene::object_context &ctx, float)
         if (ImGui::BeginMenu("View"))
         {
             {
-                bool active = _debug_window && !_debug_window.unique();
+                bool active = _debug_window && !(_debug_window.use_count() == 1);
 
-                if (_debug_window && _debug_window.unique())
+                if (_debug_window && (_debug_window.use_count() == 1))
                 {
                     _debug_window->destroy(), _debug_window.reset();
                 }

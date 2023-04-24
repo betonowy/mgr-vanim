@@ -34,9 +34,9 @@ std::filesystem::path find_resource_path()
 
 namespace utils
 {
-std::filesystem::path resource_path(std::filesystem::path relative)
+std::string resource_path(std::filesystem::path relative)
 {
     static const auto path = find_resource_path();
-    return path / relative;
+    return (path / relative).string();
 }
 } // namespace utils

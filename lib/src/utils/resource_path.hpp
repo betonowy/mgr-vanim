@@ -4,5 +4,5 @@
 
 namespace utils
 {
-std::filesystem::path resource_path(std::filesystem::path relative);
+std::string resource_path(std::filesystem::path relative);
 }
