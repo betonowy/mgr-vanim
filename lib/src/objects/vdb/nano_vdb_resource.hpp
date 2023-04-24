@@ -26,6 +26,14 @@ private:
     std::vector<std::future<frame>> _incoming_frames;
     std::vector<int> _scheduled_frames;
     std::vector<frame> _loaded_frames;
+    std::vector<frame> _free_frames;
     std::vector<int> _temp_int_vector;
+
+    int frame_count = 0;
+
+    std::shared_ptr<frame> bkg_frame;
+    std::shared_ptr<frame> view_frame;
+
+    size_t max_buffer_size;
 };
 } // namespace objects::vdb

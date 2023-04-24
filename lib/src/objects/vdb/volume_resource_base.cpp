@@ -129,38 +129,6 @@ void volume_resource_base::init(scene::object_context &ctx)
 
         _world_data = std::move(objects[0]);
     }
-
-    // std::function vdb_task = [] {
-    //     volume_data data{
-    //         .ssbo = std::make_shared<gl::shader_storage>(),
-    //         .offsets = glm::uvec4(~0),
-    //     };
-
-    //     auto grids = nanovdb::io::readGrids("/home/araara/Documents/vdb-animations/Fire_01/embergen_fire_a_69.nvdb");
-    //     size_t grids_size = 0;
-    //     std::vector<size_t> offsets;
-
-    //     for (auto &grid : grids)
-    //     {
-    //         offsets.push_back(grids_size);
-    //         grids_size += grid.size();
-    //         assert(grids_size % 4 == 0); // GPU can support 4-byte aligned grids only
-    //     }
-
-    //     data.ssbo->buffer_data(nullptr, grids_size, GL_STATIC_DRAW);
-
-    //     for (size_t i = 0; i < grids.size(); ++i)
-    //     {
-    //         data.ssbo->buffer_sub_data(grids[i].data(), grids[i].size(), offsets[i]);
-    //         data.offsets[i] = offsets[i];
-    //     }
-
-    //     glFinish(); // glFlush might be enough
-
-    //     return data;
-    // };
-
-    // _incoming_volume_data = ctx.gl_thread().enqueue(std::move(vdb_task));
 }
 
 void volume_resource_base::update(scene::object_context &ctx, float delta_time)
@@ -173,11 +141,11 @@ void volume_resource_base::update(scene::object_context &ctx, float delta_time)
         {
             _current_time = _min_time;
         }
+    }
 
-        if (!_volume_data_active)
-        {
-            return;
-        }
+    if (!_volume_data_active)
+    {
+        return;
     }
 
     _world_data->update_buffer();

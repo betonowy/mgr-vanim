@@ -4,8 +4,7 @@
 #include <utils/future_helpers.hpp>
 #include <utils/gl_resource_thread.hpp>
 
-#include <nanovdb/NanoVDB.h>
-#include <nanovdb/util/IO.h>
+#include <utils/nvdb_mmap.hpp>
 
 #include <algorithm>
 #include <iostream>
@@ -52,6 +51,29 @@ void nano_vdb_resource::init(scene::object_context &ctx)
     set_frame_range(0, _nvdb_frames.size() / get_frame_rate());
     set_preload_hint(0.035);
 
+    max_buffer_size = 0;
+
+    for (const auto &[n, path] : _nvdb_frames)
+    {
+        utils::nvdb_mmap nvdb_mmap(path.string());
+        const auto &grids = nvdb_mmap.grids();
+
+        size_t buffer_size = 0;
+
+        for (const auto &[ptr, size] : grids)
+        {
+            buffer_size += size;
+        }
+
+        if (buffer_size > max_buffer_size)
+        {
+            max_buffer_size = buffer_size;
+        }
+    }
+
+    bkg_frame = std::make_shared<frame>();
+    view_frame = std::make_shared<frame>();
+
     volume_resource_base::init(ctx);
 }
 
@@ -82,6 +104,12 @@ bool is_unload_safe(int range_min, int range_max, int current_frame, int frames_
 
 void nano_vdb_resource::update(scene::object_context &ctx, float delta_time)
 {
+    int frame_rate = get_frame_rate();
+    int frames_ahead = get_preload_hint() * frame_rate + 1;
+    int current_frame = get_current_time() * frame_rate;
+    int range_min = get_min_time() * frame_rate;
+    int range_max = get_max_time() * frame_rate;
+
     {
         auto is_invalid = [](const std::future<frame> &future) -> bool { return !future.valid(); };
         auto begin = _incoming_frames.begin();
@@ -108,22 +136,36 @@ void nano_vdb_resource::update(scene::object_context &ctx, float delta_time)
         _incoming_frames.erase(std::remove_if(begin, end, is_invalid), end);
     }
 
-    int frame_rate = get_frame_rate();
-    int frames_ahead = get_preload_hint() * frame_rate;
-    int current_frame = get_current_time() * frame_rate;
-    int range_min = get_min_time() * frame_rate;
-    int range_max = get_max_time() * frame_rate;
-
     if (!get_no_unload())
     {
-        auto unload_condition = [&](const frame &frame) -> bool {
-            return is_unload_safe(range_min, range_max, current_frame, frames_ahead, frame.frame_number);
-        };
-
         auto begin = _loaded_frames.begin();
         auto end = _loaded_frames.end();
 
-        _loaded_frames.erase(std::remove_if(begin, end, unload_condition), end);
+        for (auto &frame : _loaded_frames)
+        {
+            if (is_unload_safe(range_min, range_max, current_frame, frames_ahead, frame.frame_number))
+            {
+                _free_frames.push_back(std::move(frame));
+            }
+        }
+
+        auto is_empty = [](const frame &frame) { return !frame.ssbo; };
+
+        _loaded_frames.erase(std::remove_if(begin, end, is_empty), end);
+    }
+
+    while (frame_count < frames_ahead)
+    {
+        std::cout << "more\n";
+        _free_frames.push_back(frame{.ssbo = std::make_shared<gl::shader_storage>()});
+        ++frame_count;
+    }
+
+    while (frame_count > frames_ahead && !_free_frames.empty())
+    {
+        std::cout << "less\n";
+        _free_frames.pop_back();
+        --frame_count;
     }
 
     int load_range_start = current_frame;
@@ -180,6 +222,7 @@ void nano_vdb_resource::update(scene::object_context &ctx, float delta_time)
 
             auto data = _incoming_frames.front().get();
             _incoming_frames.erase(_incoming_frames.begin());
+            _scheduled_frames.erase(std::find(_scheduled_frames.begin(), _scheduled_frames.end(), data.frame_number));
 
             if (current_frame == data.frame_number)
             {
@@ -194,64 +237,83 @@ void nano_vdb_resource::update(scene::object_context &ctx, float delta_time)
     {
         signal_ad_hoc_load();
 
-        frame data{
-            .ssbo = std::make_shared<gl::shader_storage>(),
-            .offsets = glm::uvec4(~0),
-            .frame_number = current_frame,
-        };
-
-        auto grids = nanovdb::io::readGrids(_nvdb_frames[current_frame].second);
-        size_t grids_size = 0;
-
-        for (size_t i = 0; i < grids.size(); ++i)
+        if (get_no_unload())
         {
-            data.offsets[i] = grids_size;
-            grids_size += grids[i].size();
-            assert(grids_size % 4 == 0);
+            _free_frames.push_back(frame{.ssbo = std::make_shared<gl::shader_storage>()});
+            ++frame_count;
         }
 
-        data.ssbo->buffer_data(nullptr, grids_size, GL_STREAM_DRAW);
-
-        for (size_t i = 0; i < grids.size(); ++i)
+        if (!_free_frames.empty())
         {
-            data.ssbo->buffer_sub_data(grids[i].data(), grids[i].size(), data.offsets[i]);
+            auto data = std::move(_free_frames.back());
+            data.offsets = glm::uvec4(~0);
+            data.frame_number = current_frame;
+
+            const auto nvdb_mmap = utils::nvdb_mmap(_nvdb_frames[current_frame].second.string());
+            const auto &grids = nvdb_mmap.grids();
+            size_t grids_size = 0;
+
+            for (size_t i = 0; i < nvdb_mmap.grids().size(); ++i)
+            {
+                data.offsets[i] = grids_size;
+                grids_size += grids[i].size;
+                assert(grids_size % 4 == 0);
+            }
+
+            data.ssbo->buffer_data_grow(nullptr, grids_size, GL_STREAM_DRAW);
+
+            for (size_t i = 0; i < grids.size(); ++i)
+            {
+                data.ssbo->buffer_sub_data(grids[i].ptr, grids[i].size, data.offsets[i]);
+            }
+
+            set_next_volume_data(data.ssbo, data.offsets);
+
+            auto remove_cond = [current_frame](int i) -> bool { return i == current_frame; };
+
+            load_range.erase(std::remove_if(load_range.begin(), load_range.end(), remove_cond), load_range.end());
+
+            _loaded_frames.push_back(std::move(data));
+
+            _free_frames.pop_back();
         }
-
-        set_next_volume_data(data.ssbo, data.offsets);
-
-        auto remove_cond = [current_frame](int i) -> bool { return i == current_frame; };
-
-        load_range.erase(std::remove_if(load_range.begin(), load_range.end(), remove_cond), load_range.end());
-
-        _loaded_frames.push_back(std::move(data));
     }
 
     if (get_play_animation())
     {
         for (const auto &n : load_range)
         {
-            std::function load_task = [path = _nvdb_frames[n].second, n = n]() -> frame {
-                frame data{
-                    .ssbo = std::make_shared<gl::shader_storage>(),
-                    .offsets = glm::uvec4(~0),
-                    .frame_number = n,
-                };
+            if (get_no_unload())
+            {
+                _free_frames.push_back(frame{.ssbo = std::make_shared<gl::shader_storage>()});
+                ++frame_count;
+            }
 
-                auto grids = nanovdb::io::readGrids(path);
+            if (_free_frames.empty())
+            {
+                break;
+            }
+
+            std::function load_task = [path = _nvdb_frames[n].second, n = n, data = std::move(_free_frames.back())]() mutable -> frame {
+                data.frame_number = n;
+                data.offsets = glm::uvec4(~0);
+
+                const auto nvdb_mmap = utils::nvdb_mmap(path.string());
+                const auto &grids = nvdb_mmap.grids();
                 size_t grids_size = 0;
 
                 for (size_t i = 0; i < grids.size(); ++i)
                 {
                     data.offsets[i] = grids_size;
-                    grids_size += grids[i].size();
+                    grids_size += grids[i].size;
                     assert(grids_size % 4 == 0);
                 }
 
-                data.ssbo->buffer_data(nullptr, grids_size, GL_STREAM_DRAW);
+                data.ssbo->buffer_data_grow(nullptr, grids_size, GL_STREAM_DRAW);
 
                 for (size_t i = 0; i < grids.size(); ++i)
                 {
-                    data.ssbo->buffer_sub_data(grids[i].data(), grids[i].size(), data.offsets[i]);
+                    data.ssbo->buffer_sub_data(grids[i].ptr, grids[i].size, data.offsets[i]);
                 }
 
                 glFinish();
@@ -259,6 +321,7 @@ void nano_vdb_resource::update(scene::object_context &ctx, float delta_time)
                 return data;
             };
 
+            _free_frames.pop_back();
             _incoming_frames.push_back(ctx.gl_thread().enqueue(load_task));
             _scheduled_frames.push_back(n);
         }

@@ -60,9 +60,9 @@ public:
         return *_gl_thread;
     }
 
-    const std::shared_ptr<utils::thread_pool> &gl_thread_sptr()
+    const std::shared_ptr<utils::gl_resource_thread> &gl_thread_sptr()
     {
-        return _cpu_thread_pool;
+        return _gl_thread;
     }
 
     void broadcast_signal(signal_e);

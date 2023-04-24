@@ -31,6 +31,8 @@ void debug_window::update(scene::object_context &ctx, float delta_time)
     _buffer[_current_buffer_index] = delta_time;
 
     const auto average = std::accumulate(_buffer.begin(), _buffer.end(), 0.f) / _buffer.size();
+    const auto max_element = *std::max_element(_buffer.begin(), _buffer.end());
+    const auto min_element = *std::min_element(_buffer.begin(), _buffer.end());
     const auto average_fps = 1.f / average;
     const auto sample_fps = 1.f / delta_time;
 
@@ -46,6 +48,8 @@ void debug_window::update(scene::object_context &ctx, float delta_time)
             ImGui::Text("Sample ms: %.2f", delta_time * 1e3f);
             ImGui::Text("FPS Average: %.1f", average_fps);
             ImGui::Text("Average ms: %.2f", average * 1e3f);
+            ImGui::Text("Minimum ms: %.2f", max_element * 1e3f);
+            ImGui::Text("Maximum ms: %.2f", min_element * 1e3f);
             ImGui::Checkbox("FPS cap", &_fps_soft_cap);
         }
 

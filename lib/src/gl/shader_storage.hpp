@@ -19,6 +19,8 @@ public:
 
     void buffer_data(const void *, size_t, GLenum usage);
 
+    void buffer_data_grow(const void *, size_t, GLenum usage);
+
     void buffer_sub_data(const void *, size_t size, size_t offset);
 
     void set_buffer_base(int);

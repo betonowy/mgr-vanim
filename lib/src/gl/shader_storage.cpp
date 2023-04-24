@@ -22,12 +22,32 @@ shader_storage::~shader_storage()
 
 void shader_storage::buffer_data(const void *data, size_t size, GLenum usage)
 {
-    utils::gpu_buffer_memory_deallocated(tracked_size);
+    glNamedBufferData(_id, size, data, usage);
+
+    if (size > tracked_size)
+    {
+        utils::gpu_buffer_memory_allocated(size - tracked_size);
+    }
+    else if (size < tracked_size)
+    {
+        utils::gpu_buffer_memory_deallocated(tracked_size - size);
+    }
+
+    tracked_size = size;
+}
+
+void shader_storage::buffer_data_grow(const void *data, size_t size, GLenum usage)
+{
+    if (tracked_size < size)
     {
         glNamedBufferData(_id, size, data, usage);
+        utils::gpu_buffer_memory_allocated(size - tracked_size);
         tracked_size = size;
     }
-    utils::gpu_buffer_memory_allocated(tracked_size);
+    else
+    {
+        glNamedBufferSubData(_id, 0, size, data);
+    }
 }
 
 void shader_storage::buffer_sub_data(const void *data, size_t size, size_t offset)

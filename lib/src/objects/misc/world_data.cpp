@@ -6,6 +6,26 @@
 #include <gl/buffer_indices.hpp>
 #include <scene/object_context.hpp>
 
+namespace
+{
+struct buffer_layout
+{
+    glm::vec3 forward;
+    uint32_t _padding_1;
+
+    glm::vec3 right;
+    uint32_t _padding_2;
+
+    glm::vec3 up;
+    uint32_t _padding_3;
+
+    glm::vec3 origin;
+    uint32_t _padding_4;
+
+    glm::uvec4 grid_offsets;
+};
+} // namespace
+
 namespace objects::misc
 {
 void world_data::init(scene::object_context &ctx)
@@ -16,28 +36,12 @@ void world_data::init(scene::object_context &ctx)
     _camera.set_aspect(static_cast<float>(ctx.window_size().x) / static_cast<float>(ctx.window_size().y));
 
     _buffer.set_buffer_base(gl::buffer_base_indices::UBO_0);
-
-    update_buffer();
+    _buffer.buffer_data(nullptr, sizeof(buffer_layout), GL_STREAM_DRAW);
 }
 
 void world_data::update_buffer()
 {
-    struct
-    {
-        glm::vec3 forward;
-        uint32_t _padding_1;
-
-        glm::vec3 right;
-        uint32_t _padding_2;
-
-        glm::vec3 up;
-        uint32_t _padding_3;
-
-        glm::vec3 origin;
-        uint32_t _padding_4;
-
-        glm::uvec4 grid_offsets;
-    } layout{
+    buffer_layout layout{
         .forward = _camera.forward(),
         .right = _camera.right(),
         .up = _camera.up(),
@@ -45,7 +49,7 @@ void world_data::update_buffer()
         .grid_offsets = _vdb_data_offsets,
     };
 
-    _buffer.buffer_data(&layout, sizeof(layout), GL_STREAM_DRAW);
+    _buffer.buffer_sub_data(&layout, sizeof(layout), 0);
 }
 
 void world_data::update(scene::object_context &ctx, float delta_frame)
@@ -60,26 +64,20 @@ void world_data::update(scene::object_context &ctx, float delta_frame)
 
         const auto dir = glm::normalize(_camera.dir());
 
-        const auto cam_flat_v2 = glm::vec2(dir.x, dir.z);
-        const auto cam_up_v2 = glm::vec2(dir.y, glm::length(cam_flat_v2));
+        auto horizontal = glm::vec2(dir.x, dir.z);
+        auto vertical = glm::vec2(dir.y, glm::length(horizontal));
 
-        float angle_flat = glm::atan(cam_flat_v2.x, cam_flat_v2.y);
+        float angle_flat = glm::atan(horizontal.x, horizontal.y) - _io_state.x_rel * SENSITIVITY;
+        float angle_up = glm::atan(dir.y / glm::length(horizontal));
 
-        angle_flat -= _io_state.x_rel * SENSITIVITY;
+        horizontal = glm::vec2(glm::sin(angle_flat), glm::cos(angle_flat));
 
-        const auto cam_flat_v2_post = glm::vec2(glm::sin(angle_flat), glm::cos(angle_flat));
-
-        float angle_up = glm::atan(dir.y / glm::length(cam_flat_v2));
         angle_up -= _io_state.y_rel * SENSITIVITY;
-
         angle_up = glm::clamp(angle_up, -PI / 2.f + ANGLE_EPSILON, PI / 2.f - ANGLE_EPSILON);
 
-        const auto cam_up_v2_post = glm::vec2(glm::sin(angle_up), glm::cos(angle_up));
+        vertical = glm::vec2(glm::sin(angle_up), glm::cos(angle_up));
 
-        int _ = 0;
-
-        _camera.set_dir(
-            glm::vec3(cam_up_v2_post.y * cam_flat_v2_post.x, cam_up_v2_post.x, cam_up_v2_post.y * cam_flat_v2_post.y));
+        _camera.set_dir(glm::vec3(vertical.y * horizontal.x, vertical.x, vertical.y * horizontal.y));
     }
 
     static constexpr float DRAG = 10.f;

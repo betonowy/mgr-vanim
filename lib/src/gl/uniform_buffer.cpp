@@ -30,6 +30,11 @@ void uniform_buffer::buffer_data(const void *data, size_t size, GLenum usage)
     utils::gpu_buffer_memory_allocated(_tracked_size);
 }
 
+void uniform_buffer::buffer_sub_data(const void *data, size_t size, size_t offset)
+{
+    glNamedBufferSubData(_id, offset, size, data);
+}
+
 void uniform_buffer::set_buffer_base(int index)
 {
     glBindBufferBase(GL_UNIFORM_BUFFER, index, _id);
