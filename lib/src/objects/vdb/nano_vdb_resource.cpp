@@ -303,6 +303,8 @@ void nano_vdb_resource::update(scene::object_context &ctx, float delta_time)
                 data.ssbo->buffer_sub_data(grids[i].ptr, grids[i].size, data.offsets[i]);
             }
 
+            glFlush();
+
             set_next_volume_data(data.ssbo, data.offsets);
 
             auto remove_cond = [current_frame](int i) -> bool { return i == current_frame; };
@@ -352,7 +354,7 @@ void nano_vdb_resource::update(scene::object_context &ctx, float delta_time)
                     data.ssbo->buffer_sub_data(grids[i].ptr, grids[i].size, data.offsets[i]);
                 }
 
-                glFinish();
+                glFlush();
 
                 return data;
             };

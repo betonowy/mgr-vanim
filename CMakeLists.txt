@@ -7,6 +7,10 @@ if(WIN32)
     set(VCPKG_TARGET_TRIPLET x64-windows-static)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     add_compile_definitions(_ITERATOR_DEBUG_LEVEL=0)
+    
+    add_compile_options("$<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/permissive->")
+    add_compile_options("$<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/Zc:throwingNew>")
+    add_compile_options("$<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/Zc:inline>")
 endif()
 
 set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")

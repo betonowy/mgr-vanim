@@ -95,7 +95,7 @@ conversion_result convert_to_nvdb(std::filesystem::path path, nvdb_format format
 
         file.close();
 
-        nanovdb::io::writeGrids(nvdb_path.string(), nano_grids);
+        nanovdb::io::writeGrids<nanovdb::HostBuffer, std::vector>(nvdb_path.string(), nano_grids);
     }
 
     return res.message = nvdb_path.string(), res.success = true, res;

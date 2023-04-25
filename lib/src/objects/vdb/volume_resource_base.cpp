@@ -168,6 +168,7 @@ void volume_resource_base::update(scene::object_context &ctx, float delta_time)
         glUniformBlockBinding(*_render_shader, 0, gl::buffer_base_indices::UBO_0);
         glUseProgram(*_render_shader);
         glDrawArrays(GL_TRIANGLES, 0, 3);
+        glFlush();
 
         if (_exception_popup)
         {
