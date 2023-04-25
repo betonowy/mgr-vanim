@@ -1,5 +1,6 @@
 #pragma once
 
+#include <gl/fence.hpp>
 #include <gl/shader.hpp>
 #include <gl/shader_storage.hpp>
 #include <gl/vertex_array.hpp>
@@ -7,6 +8,7 @@
 #include <objects/misc/world_data.hpp>
 #include <scene/object.hpp>
 
+#include <array>
 #include <filesystem>
 #include <future>
 #include <vector>
@@ -23,9 +25,15 @@ class volume_resource_base : public scene::object
 public:
     // virtual std::vector<std::filesystem::path> discover_data(std::filesystem::path) = 0;
 
+    void set_buffer_size(bool preserve_contents);
+
+    void set_load_callback(std::function<std::future<void>(int)>);
+
+    // old
+
     void set_next_volume_data(std::shared_ptr<gl::shader_storage>, glm::uvec4 offsets);
 
-    void set_preload_hint(float frames_ahead);
+    // void set_preload_hint(float frames_ahead);
     float get_preload_hint();
 
     void set_no_unload(bool);
@@ -44,10 +52,7 @@ public:
     const std::vector<std::string> &get_grid_names();
     void set_grid_names(std::vector<std::string>);
 
-    void signal_force_load();
     size_t get_force_loads();
-
-    void signal_ad_hoc_load();
     size_t get_ad_hoc_loads();
 
     void set_frame_range(float min, float max);
@@ -73,15 +78,37 @@ public:
     void update(scene::object_context &, float) override;
     void signal(scene::object_context &, scene::signal_e) override;
 
+protected:
+    static constexpr size_t _MAX_BLOCKS = 1;
+
+    gl::shader_storage _ssbo;
+    std::byte *_ssbo_ptr;
+    size_t _ssbo_block_size = 0;
+    size_t _ssbo_block_count = 0;
+    std::array<size_t, _MAX_BLOCKS> _ssbo_block_frame;
+    std::array<gl::fence, _MAX_BLOCKS> _ssbo_block_fences;
+
+    struct frame
+    {
+        std::string path;
+        size_t block_number;
+        gl::fence drawFence;
+        gl::fence loadFence;
+        size_t number;
+    };
+
+    std::vector<frame> _frames;
+
+    size_t _current_frame = 0;
+    float _frame_overshoot = 0;
+
+    std::shared_ptr<objects::misc::world_data> _world_data;
+
 private:
     std::unique_ptr<gl::shader> _render_shader;
     std::unique_ptr<gl::vertex_array> _vertex_array;
     std::shared_ptr<gl::vertex_buffer> _vertex_buffer;
-    std::shared_ptr<gl::shader_storage> _volume_data_active;
-
     std::shared_ptr<objects::ui::popup> _exception_popup;
-    std::shared_ptr<objects::misc::world_data> _world_data;
-
     std::vector<std::string> _grid_names;
 
     std::string _last_error;

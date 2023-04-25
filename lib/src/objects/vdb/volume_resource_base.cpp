@@ -5,19 +5,10 @@
 #include <scene/object_context.hpp>
 #include <utils/resource_path.hpp>
 
+#include <iostream>
+
 namespace objects::vdb
 {
-void volume_resource_base::set_next_volume_data(std::shared_ptr<gl::shader_storage> data, glm::uvec4 offsets)
-{
-    _volume_data_active = std::move(data);
-    _world_data->set_vdb_data_offsets(offsets);
-}
-
-void volume_resource_base::set_preload_hint(float ms_ahead)
-{
-    _preload_hint = glm::max(ms_ahead, 0.f);
-}
-
 float volume_resource_base::get_preload_hint()
 {
     return _preload_hint;
@@ -63,19 +54,9 @@ void volume_resource_base::set_frame_range(float min, float max)
     _min_time = min, _max_time = max;
 }
 
-void volume_resource_base::signal_force_load()
-{
-    ++_force_loads;
-}
-
 size_t volume_resource_base::get_force_loads()
 {
     return _force_loads;
-}
-
-void volume_resource_base::signal_ad_hoc_load()
-{
-    ++_ad_hoc_loads;
 }
 
 size_t volume_resource_base::get_ad_hoc_loads()
@@ -117,6 +98,9 @@ void volume_resource_base::init(scene::object_context &ctx)
         source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/default.frag")},
     });
 
+    glShaderStorageBlockBinding(*_render_shader, 0, gl::buffer_base_indices::SSBO_0);
+    glUniformBlockBinding(*_render_shader, 0, gl::buffer_base_indices::UBO_0);
+
     _vertex_array = std::make_unique<gl::vertex_array>();
     _vertex_buffer = std::make_shared<gl::vertex_buffer>();
 
@@ -139,36 +123,21 @@ void volume_resource_base::init(scene::object_context &ctx)
 
         _world_data = std::move(objects[0]);
     }
+
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, _ssbo);
 }
 
 void volume_resource_base::update(scene::object_context &ctx, float delta_time)
 {
-    if (_play_animation)
-    {
-        _current_time += delta_time;
-
-        if (_current_time >= _max_time)
-        {
-            _current_time = _min_time;
-        }
-    }
-
-    if (!_volume_data_active)
-    {
-        return;
-    }
-
-    _world_data->update_buffer();
+    const auto &active_frame = _frames[_current_frame];
 
     try
     {
+        _world_data->update(ctx, delta_time);
         glBindVertexArray(*_vertex_array);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, *_volume_data_active);
-        glShaderStorageBlockBinding(*_render_shader, 0, gl::buffer_base_indices::SSBO_0);
-        glUniformBlockBinding(*_render_shader, 0, gl::buffer_base_indices::UBO_0);
+        glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, _ssbo, 0, _ssbo_block_size);
         glUseProgram(*_render_shader);
         glDrawArrays(GL_TRIANGLES, 0, 3);
-        glFlush();
 
         if (_exception_popup)
         {
@@ -191,6 +160,25 @@ void volume_resource_base::update(scene::object_context &ctx, float delta_time)
         }
 
         _exception_popup->set_width(ctx.window_size().x - 64);
+    }
+
+    if (_play_animation)
+    {
+        _frame_overshoot += delta_time;
+
+        auto frame_time = 1.0f / _frame_rate;
+
+        if (_frame_overshoot > frame_time)
+        {
+            _frame_overshoot -= frame_time;
+            _current_frame = (_current_frame + 1) % _frames.size();
+            _ssbo_block_fences[0].sync();
+        }
+
+        if (_frame_overshoot > frame_time)
+        {
+            _frame_overshoot = frame_time;
+        }
     }
 }
 

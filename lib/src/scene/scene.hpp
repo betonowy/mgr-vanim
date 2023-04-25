@@ -11,7 +11,7 @@ namespace scene
 class scene
 {
 public:
-    scene(SDL_GLContext, SDL_Window *);
+    scene();
 
     void init(std::function<void(object_context &)>);
 

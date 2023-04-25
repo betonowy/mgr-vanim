@@ -6,9 +6,7 @@
 
 namespace scene
 {
-scene::scene(SDL_GLContext gl_context, SDL_Window *window) : _context(gl_context, window)
-{
-}
+scene::scene() = default;
 
 void scene::init(std::function<void(object_context &)> func)
 {

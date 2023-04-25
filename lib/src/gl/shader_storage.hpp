@@ -9,27 +9,27 @@ namespace gl
 class shader_storage
 {
 public:
-    shader_storage();
-    ~shader_storage();
+    shader_storage()
+    {
+        glCreateBuffers(1, &_id);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, _id);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    }
+
+    ~shader_storage()
+    {
+        if (_id)
+        {
+            glDeleteBuffers(1, &_id);
+        }
+    }
 
     operator GLuint() const
     {
         return _id;
     }
 
-    void buffer_data(const void *, size_t, GLenum usage);
-
-    void buffer_data_grow(const void *, size_t, GLenum usage);
-
-    void buffer_sub_data(const void *, size_t size, size_t offset);
-
-    void set_buffer_base(int);
-
-    GLuint get_buffer_base() const;
-
 private:
     GLuint _id = 0;
-    size_t tracked_size = 0;
-    GLuint _base_index = 0;
 };
 } // namespace gl

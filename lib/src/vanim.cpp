@@ -51,8 +51,6 @@ void run()
     SDL_SetWindowMinimumSize(window, 800, 600);
 
     const auto gl_window_context = SDL_GL_CreateContext(window);
-    SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
-    const auto gl_resource_context = SDL_GL_CreateContext(window);
 
     if (SDL_GL_MakeCurrent(window, gl_window_context))
     {
@@ -68,7 +66,7 @@ void run()
         std::cout << "GLSL     : " << glGetString(GL_SHADING_LANGUAGE_VERSION) << '\n';
     }
 
-    SDL_GL_SetSwapInterval(0);
+    SDL_GL_SetSwapInterval(1);
 
     if (!gl3wIsSupported(4, 5))
     {
@@ -90,14 +88,13 @@ void run()
     ImGui_ImplOpenGL3_Init("#version 150");
 
     {
-        scene::scene scene(gl_resource_context, window);
+        scene::scene scene;
         bool loop = true;
 
         {
             auto scene_initializer = [](scene::object_context &ctx) {
                 ctx.add_object(std::make_shared<objects::ui::debug_window>());
                 ctx.add_object(std::make_shared<objects::ui::main_menu>());
-                // ctx.add_object(std::make_shared<objects::vdb::volume_resource_base>());
                 ctx.add_object(std::make_shared<objects::misc::world_data>());
             };
 
@@ -179,7 +176,6 @@ void run()
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
 
-    SDL_GL_DeleteContext(gl_resource_context);
     SDL_GL_DeleteContext(gl_window_context);
     SDL_DestroyWindow(window);
     SDL_Quit();

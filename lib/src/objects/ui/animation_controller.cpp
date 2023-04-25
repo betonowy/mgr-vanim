@@ -34,7 +34,7 @@ void animation_controller::update(scene::object_context &ctx, float)
         {
             float preload = _volume_resource->get_preload_hint();
             ImGui::SliderFloat("Load ahead (seconds)", &preload, 0.f, 0.5f, "%.3f", ImGuiSliderFlags_Logarithmic);
-            _volume_resource->set_preload_hint(preload);
+            // _volume_resource->set_preload_hint(preload);
         }
 
         ImGui::Text("Buffer count: %d", static_cast<int>(_volume_resource->get_preload_hint() * _volume_resource->get_frame_rate() + 1));

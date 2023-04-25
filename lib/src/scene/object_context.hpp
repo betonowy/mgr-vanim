@@ -13,7 +13,6 @@ typedef void *SDL_GLContext;
 namespace utils
 {
 class thread_pool;
-class gl_resource_thread;
 } // namespace utils
 
 namespace scene
@@ -25,7 +24,7 @@ class object_context
 {
     friend scene;
 
-    object_context(SDL_GLContext, SDL_Window *);
+    object_context();
     ~object_context();
 
     object_context(object_context &&) = delete;
@@ -53,16 +52,6 @@ public:
     const std::shared_ptr<utils::thread_pool> &generic_thread_pool_sptr()
     {
         return _cpu_thread_pool;
-    }
-
-    utils::gl_resource_thread &gl_thread()
-    {
-        return *_gl_thread;
-    }
-
-    const std::shared_ptr<utils::gl_resource_thread> &gl_thread_sptr()
-    {
-        return _gl_thread;
     }
 
     void broadcast_signal(signal_e);
@@ -94,7 +83,6 @@ public:
 
 private:
     std::shared_ptr<utils::thread_pool> _cpu_thread_pool;
-    std::shared_ptr<utils::gl_resource_thread> _gl_thread;
 
     std::vector<std::shared_ptr<object>> _objects_to_add;
     std::vector<std::shared_ptr<object>> _objects_to_init;

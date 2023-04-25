@@ -2,11 +2,11 @@
 
 #include <scene/object_context.hpp>
 #include <utils/future_helpers.hpp>
-#include <utils/gl_resource_thread.hpp>
-
+#include <utils/memory_counter.hpp>
 #include <utils/nvdb_mmap.hpp>
 
 #include <algorithm>
+#include <cstring>
 #include <iostream>
 #include <regex>
 
@@ -55,11 +55,17 @@ nano_vdb_resource::nano_vdb_resource(std::filesystem::path path) : _resource_dir
     _nvdb_frames = std::move(nvdb_files);
 }
 
+nano_vdb_resource::~nano_vdb_resource()
+{
+    glUnmapNamedBuffer(_ssbo);
+}
+
 void nano_vdb_resource::init(scene::object_context &ctx)
 {
+    volume_resource_base::init(ctx);
+
     set_frame_rate(30.f);
-    set_frame_range(0, _nvdb_frames.size() / get_frame_rate());
-    set_preload_hint(0.035);
+    // set_preload_hint(0.035);
 
     max_buffer_size = 0;
 
@@ -107,12 +113,43 @@ void nano_vdb_resource::init(scene::object_context &ctx)
         {
             max_buffer_size = buffer_size;
         }
+
+        _frames.emplace_back(frame{
+            .path = path,
+            .block_number = 0,
+            .number = _frames.size(),
+        });
     }
 
-    bkg_frame = std::make_shared<frame>();
-    view_frame = std::make_shared<frame>();
+    _ssbo_block_size = max_buffer_size;
+    _ssbo_block_count = _MAX_BLOCKS;
 
-    volume_resource_base::init(ctx);
+    utils::gpu_buffer_memory_allocated(_ssbo_block_size * _ssbo_block_count);
+
+    glNamedBufferStorage(_ssbo, _ssbo_block_size * _ssbo_block_count, 0, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT);
+
+    _ssbo_ptr = reinterpret_cast<std::byte *>(glMapNamedBufferRange(_ssbo, 0, _ssbo_block_size, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_FLUSH_EXPLICIT_BIT));
+
+    {
+        utils::nvdb_mmap nvdb_file(_nvdb_frames[0].second.string());
+
+        glm::uvec4 offsets(~0);
+
+        const auto &grids = nvdb_file.grids();
+
+        size_t offset = 0;
+
+        for (size_t i = 0; i < grids.size(); ++i)
+        {
+            offsets[i] = offset;
+            std::memcpy(_ssbo_ptr + offset, grids[i].ptr, grids[i].size);
+            offset += grids[i].size;
+        }
+
+        _world_data->set_vdb_data_offsets(offsets);
+    }
+
+    glFlushMappedNamedBufferRange(_ssbo, 0, _ssbo_block_size);
 }
 
 namespace
@@ -142,228 +179,254 @@ bool is_unload_safe(int range_min, int range_max, int current_frame, int frames_
 
 void nano_vdb_resource::update(scene::object_context &ctx, float delta_time)
 {
-    int frame_rate = get_frame_rate();
-    int frames_ahead = get_preload_hint() * frame_rate + 1;
-    int current_frame = get_current_time() * frame_rate;
-    int range_min = get_min_time() * frame_rate;
-    int range_max = get_max_time() * frame_rate;
-
+    if (_ssbo_block_frame[0] != _current_frame)
     {
-        auto is_invalid = [](const std::future<frame> &future) -> bool { return !future.valid(); };
-        auto begin = _incoming_frames.begin();
-        auto end = _incoming_frames.end();
+        utils::nvdb_mmap nvdb_file(_nvdb_frames[_current_frame].second.string());
 
-        _incoming_frames.erase(std::remove_if(begin, end, is_invalid), end);
-    }
+        glm::uvec4 offsets(~0);
 
-    for (auto &incoming_frame : _incoming_frames)
-    {
-        if (utils::is_ready(incoming_frame))
+        const auto &grids = nvdb_file.grids();
+
+        size_t copy_size = 0;
+
+        _ssbo_block_fences[0].client_wait(true);
+
+        for (size_t i = 0; i < grids.size(); ++i)
         {
-            auto data = incoming_frame.get();
-            _loaded_frames.push_back(std::move(data));
-            _scheduled_frames.erase(std::find(_scheduled_frames.begin(), _scheduled_frames.end(), data.frame_number));
-        }
-    }
-
-    {
-        auto is_invalid = [](const std::future<frame> &future) -> bool { return !future.valid(); };
-        auto begin = _incoming_frames.begin();
-        auto end = _incoming_frames.end();
-
-        _incoming_frames.erase(std::remove_if(begin, end, is_invalid), end);
-    }
-
-    if (!get_no_unload())
-    {
-        auto begin = _loaded_frames.begin();
-        auto end = _loaded_frames.end();
-
-        for (auto &frame : _loaded_frames)
-        {
-            if (is_unload_safe(range_min, range_max, current_frame, frames_ahead, frame.frame_number))
-            {
-                _free_frames.push_back(std::move(frame));
-            }
+            offsets[i] = copy_size;
+            std::memcpy(_ssbo_ptr + copy_size, grids[i].ptr, grids[i].size);
+            copy_size += grids[i].size;
         }
 
-        auto is_empty = [](const frame &frame) { return !frame.ssbo; };
+        _world_data->set_vdb_data_offsets(offsets);
 
-        _loaded_frames.erase(std::remove_if(begin, end, is_empty), end);
+        glFlushMappedNamedBufferRange(_ssbo, 0, copy_size);
+
+        _ssbo_block_frame[0] = _current_frame;
     }
 
-    while (frame_count < frames_ahead)
-    {
-        _free_frames.push_back(frame{.ssbo = std::make_shared<gl::shader_storage>()});
-        ++frame_count;
-    }
+    // int frame_rate = get_frame_rate();
+    // int frames_ahead = get_preload_hint() * frame_rate + 1;
+    // int current_frame = get_current_time() * frame_rate;
+    // int range_min = get_min_time() * frame_rate;
+    // int range_max = get_max_time() * frame_rate;
 
-    while (frame_count > frames_ahead && !_free_frames.empty())
-    {
-        _free_frames.pop_back();
-        --frame_count;
-    }
+    // {
+    //     auto is_invalid = [](const std::future<frame> &future) -> bool { return !future.valid(); };
+    //     auto begin = _incoming_frames.begin();
+    //     auto end = _incoming_frames.end();
 
-    int load_range_start = current_frame;
-    int load_range_end = current_frame + frames_ahead;
+    //     _incoming_frames.erase(std::remove_if(begin, end, is_invalid), end);
+    // }
 
-    auto &load_range = _temp_int_vector;
-    load_range.clear();
+    // for (auto &incoming_frame : _incoming_frames)
+    // {
+    //     if (utils::is_ready(incoming_frame))
+    //     {
+    //         auto data = incoming_frame.get();
+    //         _loaded_frames.push_back(std::move(data));
+    //         _scheduled_frames.erase(std::find(_scheduled_frames.begin(), _scheduled_frames.end(), data.frame_number));
+    //     }
+    // }
 
-    for (int i = load_range_start; i <= load_range_end; ++i)
-    {
-        load_range.push_back(i % range_max);
-    }
+    // {
+    //     auto is_invalid = [](const std::future<frame> &future) -> bool { return !future.valid(); };
+    //     auto begin = _incoming_frames.begin();
+    //     auto end = _incoming_frames.end();
 
-    auto no_load_needed = [&](const int frame) -> bool {
-        for (const auto &loaded_frame : _loaded_frames)
-        {
-            if (loaded_frame.frame_number == frame)
-            {
-                return true;
-            }
-        }
+    //     _incoming_frames.erase(std::remove_if(begin, end, is_invalid), end);
+    // }
 
-        for (const auto &scheduled_frame : _scheduled_frames)
-        {
-            if (scheduled_frame == frame)
-            {
-                return true;
-            }
-        }
+    // if (!get_no_unload())
+    // {
+    //     auto begin = _loaded_frames.begin();
+    //     auto end = _loaded_frames.end();
 
-        return false;
-    };
+    //     for (auto &frame : _loaded_frames)
+    //     {
+    //         if (is_unload_safe(range_min, range_max, current_frame, frames_ahead, frame.frame_number))
+    //         {
+    //             _free_frames.push_back(std::move(frame));
+    //         }
+    //     }
 
-    load_range.erase(std::remove_if(load_range.begin(), load_range.end(), no_load_needed), load_range.end());
+    //     auto is_empty = [](const frame &frame) { return !frame.ssbo; };
 
-    auto find_current_frame = [current_frame](const frame &frame) -> bool { return frame.frame_number == current_frame; };
+    //     _loaded_frames.erase(std::remove_if(begin, end, is_empty), end);
+    // }
 
-    auto found = std::find_if(_loaded_frames.begin(), _loaded_frames.end(), find_current_frame);
+    // while (frame_count < frames_ahead)
+    // {
+    //     _free_frames.push_back(frame{.ssbo = std::make_shared<gl::shader_storage>()});
+    //     ++frame_count;
+    // }
 
-    if (found != _loaded_frames.end())
-    {
-        set_next_volume_data(found->ssbo, found->offsets);
-    }
-    else if (!_incoming_frames.empty() &&
-             std::find(_scheduled_frames.begin(), _scheduled_frames.end(), current_frame) != _scheduled_frames.end())
-    {
-        signal_force_load();
+    // while (frame_count > frames_ahead && !_free_frames.empty())
+    // {
+    //     _free_frames.pop_back();
+    //     --frame_count;
+    // }
 
-        bool frame_found = false;
+    // int load_range_start = current_frame;
+    // int load_range_end = current_frame + frames_ahead;
 
-        do
-        {
-            assert(!_incoming_frames.empty());
+    // auto &load_range = _temp_int_vector;
+    // load_range.clear();
 
-            auto data = _incoming_frames.front().get();
-            _incoming_frames.erase(_incoming_frames.begin());
-            _scheduled_frames.erase(std::find(_scheduled_frames.begin(), _scheduled_frames.end(), data.frame_number));
+    // for (int i = load_range_start; i <= load_range_end; ++i)
+    // {
+    //     load_range.push_back(i % range_max);
+    // }
 
-            if (current_frame == data.frame_number)
-            {
-                frame_found = true;
-                set_next_volume_data(data.ssbo, data.offsets);
-            }
+    // auto no_load_needed = [&](const int frame) -> bool {
+    //     for (const auto &loaded_frame : _loaded_frames)
+    //     {
+    //         if (loaded_frame.frame_number == frame)
+    //         {
+    //             return true;
+    //         }
+    //     }
 
-            _loaded_frames.push_back(std::move(data));
-        } while (!frame_found && !_incoming_frames.empty());
-    }
-    else
-    {
-        signal_ad_hoc_load();
+    //     for (const auto &scheduled_frame : _scheduled_frames)
+    //     {
+    //         if (scheduled_frame == frame)
+    //         {
+    //             return true;
+    //         }
+    //     }
 
-        if (get_no_unload())
-        {
-            _free_frames.push_back(frame{.ssbo = std::make_shared<gl::shader_storage>()});
-            ++frame_count;
-        }
+    //     return false;
+    // };
 
-        if (!_free_frames.empty())
-        {
-            auto data = std::move(_free_frames.back());
-            data.offsets = glm::uvec4(~0);
-            data.frame_number = current_frame;
+    // load_range.erase(std::remove_if(load_range.begin(), load_range.end(), no_load_needed), load_range.end());
 
-            const auto nvdb_mmap = utils::nvdb_mmap(_nvdb_frames[current_frame].second.string());
-            const auto &grids = nvdb_mmap.grids();
-            size_t grids_size = 0;
+    // auto find_current_frame = [current_frame](const frame &frame) -> bool { return frame.frame_number == current_frame; };
 
-            for (size_t i = 0; i < nvdb_mmap.grids().size(); ++i)
-            {
-                data.offsets[i] = grids_size;
-                grids_size += grids[i].size;
-                assert(grids_size % 4 == 0);
-            }
+    // auto found = std::find_if(_loaded_frames.begin(), _loaded_frames.end(), find_current_frame);
 
-            data.ssbo->buffer_data_grow(nullptr, grids_size, GL_STREAM_DRAW);
+    // if (found != _loaded_frames.end())
+    // {
+    //     set_next_volume_data(found->ssbo, found->offsets);
+    // }
+    // else if (!_incoming_frames.empty() &&
+    //          std::find(_scheduled_frames.begin(), _scheduled_frames.end(), current_frame) != _scheduled_frames.end())
+    // {
+    //     signal_force_load();
 
-            for (size_t i = 0; i < grids.size(); ++i)
-            {
-                data.ssbo->buffer_sub_data(grids[i].ptr, grids[i].size, data.offsets[i]);
-            }
+    //     bool frame_found = false;
 
-            glFlush();
+    //     do
+    //     {
+    //         assert(!_incoming_frames.empty());
 
-            set_next_volume_data(data.ssbo, data.offsets);
+    //         auto data = _incoming_frames.front().get();
+    //         _incoming_frames.erase(_incoming_frames.begin());
+    //         _scheduled_frames.erase(std::find(_scheduled_frames.begin(), _scheduled_frames.end(), data.frame_number));
 
-            auto remove_cond = [current_frame](int i) -> bool { return i == current_frame; };
+    //         if (current_frame == data.frame_number)
+    //         {
+    //             frame_found = true;
+    //             set_next_volume_data(data.ssbo, data.offsets);
+    //         }
 
-            load_range.erase(std::remove_if(load_range.begin(), load_range.end(), remove_cond), load_range.end());
+    //         _loaded_frames.push_back(std::move(data));
+    //     } while (!frame_found && !_incoming_frames.empty());
+    // }
+    // else
+    // {
+    //     signal_ad_hoc_load();
 
-            _loaded_frames.push_back(std::move(data));
+    //     if (get_no_unload())
+    //     {
+    //         _free_frames.push_back(frame{.ssbo = std::make_shared<gl::shader_storage>()});
+    //         ++frame_count;
+    //     }
 
-            _free_frames.pop_back();
-        }
-    }
+    //     if (!_free_frames.empty())
+    //     {
+    //         auto data = std::move(_free_frames.back());
+    //         data.offsets = glm::uvec4(~0);
+    //         data.frame_number = current_frame;
 
-    if (get_play_animation())
-    {
-        for (const auto &n : load_range)
-        {
-            if (get_no_unload())
-            {
-                _free_frames.push_back(frame{.ssbo = std::make_shared<gl::shader_storage>()});
-                ++frame_count;
-            }
+    //         const auto nvdb_mmap = utils::nvdb_mmap(_nvdb_frames[current_frame].second.string());
+    //         const auto &grids = nvdb_mmap.grids();
+    //         size_t grids_size = 0;
 
-            if (_free_frames.empty())
-            {
-                break;
-            }
+    //         for (size_t i = 0; i < nvdb_mmap.grids().size(); ++i)
+    //         {
+    //             data.offsets[i] = grids_size;
+    //             grids_size += grids[i].size;
+    //             assert(grids_size % 4 == 0);
+    //         }
 
-            std::function load_task = [path = _nvdb_frames[n].second, n = n, data = std::move(_free_frames.back())]() mutable -> frame {
-                data.frame_number = n;
-                data.offsets = glm::uvec4(~0);
+    //         data.ssbo->buffer_data_grow(nullptr, grids_size, GL_STREAM_DRAW);
 
-                const auto nvdb_mmap = utils::nvdb_mmap(path.string());
-                const auto &grids = nvdb_mmap.grids();
-                size_t grids_size = 0;
+    //         for (size_t i = 0; i < grids.size(); ++i)
+    //         {
+    //             data.ssbo->buffer_sub_data(grids[i].ptr, grids[i].size, data.offsets[i]);
+    //         }
 
-                for (size_t i = 0; i < grids.size(); ++i)
-                {
-                    data.offsets[i] = grids_size;
-                    grids_size += grids[i].size;
-                    assert(grids_size % 4 == 0);
-                }
+    //         glFlush();
 
-                data.ssbo->buffer_data_grow(nullptr, grids_size, GL_STREAM_DRAW);
+    //         set_next_volume_data(data.ssbo, data.offsets);
 
-                for (size_t i = 0; i < grids.size(); ++i)
-                {
-                    data.ssbo->buffer_sub_data(grids[i].ptr, grids[i].size, data.offsets[i]);
-                }
+    //         auto remove_cond = [current_frame](int i) -> bool { return i == current_frame; };
 
-                glFlush();
+    //         load_range.erase(std::remove_if(load_range.begin(), load_range.end(), remove_cond), load_range.end());
 
-                return data;
-            };
+    //         _loaded_frames.push_back(std::move(data));
 
-            _free_frames.pop_back();
-            _incoming_frames.push_back(ctx.gl_thread().enqueue(load_task));
-            _scheduled_frames.push_back(n);
-        }
-    }
+    //         _free_frames.pop_back();
+    //     }
+    // }
+
+    // if (get_play_animation())
+    // {
+    //     for (const auto &n : load_range)
+    //     {
+    //         if (get_no_unload())
+    //         {
+    //             _free_frames.push_back(frame{.ssbo = std::make_shared<gl::shader_storage>()});
+    //             ++frame_count;
+    //         }
+
+    //         if (_free_frames.empty())
+    //         {
+    //             break;
+    //         }
+
+    //         std::function load_task = [path = _nvdb_frames[n].second, n = n, data = std::move(_free_frames.back())]() mutable -> frame {
+    //             data.frame_number = n;
+    //             data.offsets = glm::uvec4(~0);
+
+    //             const auto nvdb_mmap = utils::nvdb_mmap(path.string());
+    //             const auto &grids = nvdb_mmap.grids();
+    //             size_t grids_size = 0;
+
+    //             for (size_t i = 0; i < grids.size(); ++i)
+    //             {
+    //                 data.offsets[i] = grids_size;
+    //                 grids_size += grids[i].size;
+    //                 assert(grids_size % 4 == 0);
+    //             }
+
+    //             data.ssbo->buffer_data_grow(nullptr, grids_size, GL_STREAM_DRAW);
+
+    //             for (size_t i = 0; i < grids.size(); ++i)
+    //             {
+    //                 data.ssbo->buffer_sub_data(grids[i].ptr, grids[i].size, data.offsets[i]);
+    //             }
+
+    //             glFlush();
+
+    //             return data;
+    //         };
+
+    //         _free_frames.pop_back();
+    //         _incoming_frames.push_back(ctx.gl_thread().enqueue(load_task));
+    //         _scheduled_frames.push_back(n);
+    //     }
+    // }
 
     volume_resource_base::update(ctx, delta_time);
 }

@@ -29,8 +29,7 @@ int raycast_value(int i, out float value)
     pnanovdb_address_t address = pnanovdb_readaccessor_get_value_address_and_level(vdb[i].grid_type, vdb[i].buf, vdb[i].accessor, PNANOVDB_REF(ijk), PNANOVDB_REF(level));
     float v0 = pnanovdb_root_read_float_typed(vdb[i].grid_type, vdb[i].buf, address, ijk, level);
 
-    pnanovdb_int32_t dim =
-        pnanovdb_uint32_as_int32(pnanovdb_readaccessor_get_dim(vdb[i].grid_type, vdb[i].buf, vdb[i].accessor, PNANOVDB_REF(ijk)));
+    pnanovdb_int32_t dim = pnanovdb_uint32_as_int32(pnanovdb_readaccessor_get_dim(vdb[i].grid_type, vdb[i].buf, vdb[i].accessor, PNANOVDB_REF(ijk)));
     pnanovdb_hdda_t hdda;
     pnanovdb_hdda_init(PNANOVDB_REF(hdda), origin, tmin, direction, tmax, dim);
 
