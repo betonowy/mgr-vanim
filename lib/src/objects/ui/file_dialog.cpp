@@ -6,10 +6,11 @@
 #include <utils/scope_guard.hpp>
 
 #include <algorithm>
+#include <codecvt>
 
 namespace objects::ui
 {
-file_dialog::file_dialog(std::function<bool(std::filesystem::path)> callback, std::string starting_path)
+file_dialog::file_dialog(std::function<bool(std::filesystem::path)> callback, std::filesystem::path starting_path)
     : _callback(std::move(callback))
 {
     if (!starting_path.empty())
@@ -40,7 +41,7 @@ void file_dialog::init(scene::object_context &)
     {
         if (entry.is_directory())
         {
-            _directoryListing.push_back(dir_it->path().filename().string());
+            _directoryListing.push_back(dir_it->path().filename().u8string());
         }
     }
 
@@ -49,6 +50,8 @@ void file_dialog::init(scene::object_context &)
 
 void file_dialog::update(scene::object_context &, float)
 {
+    std::u8string work_utf8_string;
+
     std::filesystem::path path = _current_path;
 
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
@@ -56,14 +59,16 @@ void file_dialog::update(scene::object_context &, float)
 
     if (ImGui::Begin("File Dialog", nullptr, ImGuiWindowFlags_NoTitleBar))
     {
-
-        ImGui::Text("Directory: %s", _current_path.c_str());
+        {
+            work_utf8_string = _current_path.u8string();
+            ImGui::Text("Directory: %s", reinterpret_cast<const char*>(work_utf8_string.c_str()));
+        }
 
         ImGui::Separator();
 
         if (ImGui::Button("Go up"))
         {
-            _current_path = std::filesystem::path(_current_path).parent_path().string();
+            _current_path = std::filesystem::path(_current_path).parent_path().u8string();
             std::filesystem::directory_iterator dir_it(_current_path);
             _directoryListing.clear();
 
@@ -71,7 +76,7 @@ void file_dialog::update(scene::object_context &, float)
             {
                 if (entry.is_directory())
                 {
-                    _directoryListing.push_back(dir_it->path().filename().string());
+                    _directoryListing.push_back(dir_it->path().filename().u8string());
                 }
             }
 
@@ -107,15 +112,20 @@ void file_dialog::update(scene::object_context &, float)
 
                 utils::scope_guard popStyle([]() { ImGui::PopStyleColor(); });
 
-                if (ImGui::Selectable(entry.c_str()))
+                work_utf8_string = entry.u8string();
+
+                if (ImGui::Selectable(reinterpret_cast<const char*>(work_utf8_string.c_str())))
                 {
-                    _current_path = std::filesystem::weakly_canonical(newPath).make_preferred().string();
+                    _current_path = std::filesystem::weakly_canonical(newPath).make_preferred();
                     std::filesystem::directory_iterator dir_it(_current_path);
                     _directoryListing.clear();
 
                     for (auto entry : dir_it)
                     {
-                        _directoryListing.push_back(dir_it->path().filename().string());
+                        if (entry.is_regular_file() || entry.is_directory())
+                        {
+                            _directoryListing.push_back(entry.path().filename());
+                        }
                     }
 
                     std::sort(_directoryListing.begin(), _directoryListing.end());
@@ -124,7 +134,8 @@ void file_dialog::update(scene::object_context &, float)
             }
             else
             {
-                ImGui::TextUnformatted(entry.c_str());
+                work_utf8_string = entry.u8string();
+                ImGui::TextUnformatted(reinterpret_cast<const char*>(work_utf8_string.c_str()));
             }
         }
     }

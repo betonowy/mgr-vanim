@@ -234,7 +234,7 @@ void volume_resource_base::update(scene::object_context &ctx, float delta_time)
                 _exception_popup->destroy();
             }
 
-            _exception_popup = ctx.share_object(std::make_shared<objects::ui::popup>("OpenGL error", e.what()));
+            _exception_popup = ctx.share_object(std::make_shared<objects::ui::popup>(u8"OpenGL error", reinterpret_cast<const char8_t*>(e.what())));
             _last_error = e.what();
         }
 

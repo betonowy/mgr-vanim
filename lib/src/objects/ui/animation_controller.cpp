@@ -23,7 +23,7 @@ void animation_controller::update(scene::object_context &ctx, float)
 {
     if (_volume_resource->is_destroyed())
     {
-        ctx.add_object(std::make_shared<popup>("Error", "Volume resource failed. Animation controler closed."));
+        ctx.add_object(std::make_shared<popup>(u8"Error", u8"Volume resource failed. Animation controler closed."));
         destroy();
     }
 

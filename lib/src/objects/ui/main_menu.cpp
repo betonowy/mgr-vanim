@@ -2,15 +2,16 @@
 
 #include <imgui.h>
 
-#include <scene/object_context.hpp>
-
 #include "../vdb/nano_vdb_resource.hpp"
-#include "../vdb/volume_resource_base.hpp"
+
 #include "animation_controller.hpp"
 #include "convert_vdb_nvdb.hpp"
 #include "debug_window.hpp"
 #include "file_dialog.hpp"
 #include "popup.hpp"
+
+#include <scene/object_context.hpp>
+#include <utils/utf8_exception.hpp>
 
 namespace objects::ui
 {
@@ -105,9 +106,14 @@ void main_menu::update(scene::object_context &ctx, float)
                         ctx->add_object(std::make_shared<animation_controller>(std::move(resource)));
                         return true;
                     }
+                    catch (utils::utf8_exception &e)
+                    {
+                        ctx->add_object(std::make_shared<popup>(u8"Can't load NanoVDB animation", e.utf8_what()));
+                        return false;
+                    }
                     catch (std::exception &e)
                     {
-                        ctx->add_object(std::make_shared<popup>("Can't load NanoVDB animation", e.what()));
+                        ctx->add_object(std::make_shared<popup>(u8"Can't load NanoVDB animation", reinterpret_cast<const char8_t*>(e.what())));
                         return false;
                     }
                 }));

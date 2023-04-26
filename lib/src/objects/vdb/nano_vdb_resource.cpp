@@ -5,6 +5,7 @@
 #include <utils/memory_counter.hpp>
 #include <utils/nvdb_mmap.hpp>
 #include <utils/thread_pool.hpp>
+#include <utils/utf8_exception.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -49,7 +50,7 @@ nano_vdb_resource::nano_vdb_resource(std::filesystem::path path)
 
     if (nvdb_files.empty())
     {
-        throw std::runtime_error("No NanoVDB frames found at: " + path.string());
+        throw utils::utf8_exception(u8"No NanoVDB frames found at: " + path.u8string());
     }
 
     std::sort(nvdb_files.begin(), nvdb_files.end());

@@ -99,7 +99,7 @@ void convert_vdb_nvdb::update(scene::object_context &ctx, float delta_time)
 {
     if (_current_status.finished)
     {
-        ctx.add_object(std::make_shared<popup>("Success", _current_status.description));
+        ctx.add_object(std::make_shared<popup>(u8"Success", std::u8string(reinterpret_cast<const char8_t*>(_current_status.description.c_str()))));
         return destroy();
     }
 
@@ -109,14 +109,14 @@ void convert_vdb_nvdb::update(scene::object_context &ctx, float delta_time)
 
         if (!job_result.error.empty())
         {
-            ctx.add_object(std::make_shared<popup>("Error", job_result.error));
+            ctx.add_object(std::make_shared<popup>(u8"Error", reinterpret_cast<const char8_t*>(job_result.error.c_str())));
             return destroy();
         }
 
         if (!job_result.next_job && !job_result.finished)
         {
-            ctx.add_object(std::make_shared<popup>("Error", "No more jobs in progress, but process didn't finish "
-                                                            "nor error. This shouldn't ever happen"));
+            ctx.add_object(std::make_shared<popup>(u8"Error", u8"No more jobs in progress, but process didn't finish "
+                                                              u8"nor error. This shouldn't ever happen"));
             return destroy();
         }
 

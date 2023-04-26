@@ -15,13 +15,13 @@ void popup::update(scene::object_context &, float)
     ImGui::SetNextWindowSizeConstraints(ImVec2(_width, 10.f), ImVec2(_width, 1000.f));
     ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 
-    ImGui::OpenPopup(_title.c_str(), ImGuiPopupFlags_NoOpenOverExistingPopup);
+    ImGui::OpenPopup(reinterpret_cast<const char*>(_title.c_str()), ImGuiPopupFlags_NoOpenOverExistingPopup);
 
-    if (ImGui::BeginPopupModal(_title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+    if (ImGui::BeginPopupModal(reinterpret_cast<const char*>(_title.c_str()), nullptr, ImGuiWindowFlags_AlwaysAutoResize))
     {
         if (!_description.empty())
         {
-            ImGui::TextWrapped("%s", _description.c_str());
+            ImGui::TextWrapped("%s", reinterpret_cast<const char*>(_description.c_str()));
         }
 
         ImGui::Separator();

@@ -11,12 +11,12 @@ namespace objects::ui
 class popup : public scene::object
 {
 public:
-    popup(std::string title, std::string description, std::function<void()> callback = {})
+    popup(std::u8string title, std::u8string description, std::function<void()> callback = {})
         : _callback(callback), _title(std::move(title)), _description(std::move(description))
     {
         if (_title.empty())
         {
-            _title = "Notification";
+            _title = u8"Notification";
         }
     }
 
@@ -31,8 +31,8 @@ public:
 
 private:
     std::function<void()> _callback;
-    std::string _title;
-    std::string _description;
+    std::u8string _title;
+    std::u8string _description;
     int _width = 250;
 };
 } // namespace objects::ui
