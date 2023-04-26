@@ -115,14 +115,14 @@ void nano_vdb_resource::init(scene::object_context &ctx)
         }
 
         _frames.emplace_back(frame{
-            .path = path,
+            .path = path.string(),
             .block_number = 0,
             .number = _frames.size(),
         });
     }
 
     _ssbo_block_size = max_buffer_size;
-    _ssbo_block_count = _MAX_BLOCKS;
+    _ssbo_block_count = MAX_BLOCKS;
 
     utils::gpu_buffer_memory_allocated(_ssbo_block_size * _ssbo_block_count);
 

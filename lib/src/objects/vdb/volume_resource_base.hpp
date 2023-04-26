@@ -79,14 +79,14 @@ public:
     void signal(scene::object_context &, scene::signal_e) override;
 
 protected:
-    static constexpr size_t _MAX_BLOCKS = 1;
+    static constexpr size_t MAX_BLOCKS = 1;
 
     gl::shader_storage _ssbo;
     std::byte *_ssbo_ptr;
     size_t _ssbo_block_size = 0;
     size_t _ssbo_block_count = 0;
-    std::array<size_t, _MAX_BLOCKS> _ssbo_block_frame;
-    std::array<gl::fence, _MAX_BLOCKS> _ssbo_block_fences;
+    std::array<size_t, MAX_BLOCKS> _ssbo_block_frame;
+    std::array<gl::fence, MAX_BLOCKS> _ssbo_block_fences;
 
     struct frame
     {
