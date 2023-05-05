@@ -1,7 +1,7 @@
 
 layout(location = 0) out vec4 color;
 
-int raycast_value(int i, out float value)
+int vdb_raycast_value(int i, out float value)
 {
     pnanovdb_coord_t bbox_min = pnanovdb_root_get_bbox_min(vdb[i].buf, vdb[i].accessor.root);
     pnanovdb_coord_t bbox_max = pnanovdb_root_get_bbox_max(vdb[i].buf, vdb[i].accessor.root);
@@ -67,19 +67,19 @@ int raycast_value(int i, out float value)
 
 void main()
 {
-    vdb_init();
+    vdb_init_debug();
 
     float value_0, value_1;
     int hit_0 = 0, hit_1 = 0;
 
     if (vdb[0].enabled)
     {
-        hit_0 = raycast_value(0, value_0);
+        hit_0 = vdb_raycast_value(0, value_0);
     }
 
     if (vdb[1].enabled)
     {
-        hit_1 = raycast_value(1, value_1);
+        hit_1 = vdb_raycast_value(1, value_1);
     }
 
     color = vec4(0, 0, 0, 1);

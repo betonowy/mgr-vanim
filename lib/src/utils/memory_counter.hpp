@@ -12,5 +12,15 @@ void gpu_buffer_memory_peak_reset();
 void gpu_buffer_memory_allocated(size_t);
 void gpu_buffer_memory_deallocated(size_t);
 
-// size_t vdb_memory_used();
+void update_wait_time(float);
+float get_wait_time();
+
+void update_copy_time(float);
+float get_copy_time();
+
+void update_map_time(float);
+float get_map_time();
+
+void update_flush_time(float);
+float get_flush_time();
 } // namespace utils

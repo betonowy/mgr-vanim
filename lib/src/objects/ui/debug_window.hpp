@@ -3,6 +3,7 @@
 #include <scene/object.hpp>
 
 #include <vector>
+#include <chrono>
 
 namespace objects::ui
 {
@@ -23,6 +24,6 @@ private:
     bool _fps_soft_cap = false;
     bool _open = true;
 
-    float _wait_time = 0.01f;
+    std::chrono::steady_clock::time_point tp;
 };
 } // namespace objects::ui

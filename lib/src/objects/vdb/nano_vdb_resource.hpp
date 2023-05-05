@@ -10,6 +10,8 @@ public:
     explicit nano_vdb_resource(std::filesystem::path);
     ~nano_vdb_resource();
 
+    void schedule_frame(scene::object_context &, int block_number, int frame_number) override;
+
     void init(scene::object_context &) override;
     void update(scene::object_context &, float) override;
 

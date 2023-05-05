@@ -3,12 +3,13 @@
 #include "signal.hpp"
 
 #include <string>
+#include <memory>
 
 namespace scene
 {
 class object_context;
 
-class object
+class object : public std::enable_shared_from_this<object>
 {
 public:
     virtual ~object() = default;

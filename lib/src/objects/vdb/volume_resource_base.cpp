@@ -3,15 +3,16 @@
 #include <gl/buffer_indices.hpp>
 #include <objects/ui/popup.hpp>
 #include <scene/object_context.hpp>
+#include <utils/memory_counter.hpp>
 #include <utils/resource_path.hpp>
 
 #include <iostream>
 
 namespace objects::vdb
 {
-float volume_resource_base::get_preload_hint()
+int volume_resource_base::get_frames_ahead()
 {
-    return _preload_hint;
+    return _frames_ahead;
 }
 
 void volume_resource_base::set_frame_rate(float value)
@@ -29,16 +30,6 @@ float volume_resource_base::get_current_time()
     return _current_time;
 }
 
-float volume_resource_base::get_min_time()
-{
-    return _min_time;
-}
-
-float volume_resource_base::get_max_time()
-{
-    return _max_time;
-}
-
 const std::vector<std::string> &volume_resource_base::get_grid_names()
 {
     return _grid_names;
@@ -47,11 +38,6 @@ const std::vector<std::string> &volume_resource_base::get_grid_names()
 void volume_resource_base::set_grid_names(std::vector<std::string> grid_names)
 {
     _grid_names = std::move(grid_names);
-}
-
-void volume_resource_base::set_frame_range(float min, float max)
-{
-    _min_time = min, _max_time = max;
 }
 
 size_t volume_resource_base::get_force_loads()
@@ -69,19 +55,98 @@ void volume_resource_base::set_play_animation(bool value)
     _play_animation = value;
 }
 
-void volume_resource_base::set_no_unload(bool value)
-{
-    _no_unload = value;
-}
-
-bool volume_resource_base::get_no_unload()
-{
-    return _no_unload;
-}
-
 bool volume_resource_base::get_play_animation()
 {
     return _play_animation;
+}
+
+const char *volume_resource_base::shading_algorithm_str(shading_algorithm value)
+{
+    switch (value)
+    {
+    case shading_algorithm::DEBUG:
+        return "Debug";
+    case shading_algorithm::DUST_HDDA:
+        return "Dust (HDDA)";
+    case shading_algorithm::DUST_RM:
+        return "Dust (raymarching)";
+    }
+
+    return nullptr;
+}
+
+void volume_resource_base::set_shading_algorithm(shading_algorithm new_shading_algorithm)
+{
+    _current_shading_algorithm = new_shading_algorithm;
+
+    using source = gl::shader::source;
+    using type = gl::shader::source::type_e;
+    using attr = gl::vertex_array::attribute;
+
+    switch (_current_shading_algorithm)
+    {
+    case shading_algorithm::DEBUG:
+        _render_shader = std::make_unique<gl::shader>(std::vector<source>{
+            source{.type = type::VERTEX, .path = utils::resource_path("glsl/default.vert")},
+            source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/pnanovdb_pre.glsl")},
+            source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/pnanovdb.glsl")},
+            source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/pnanovdb_post.glsl")},
+            source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/debug.frag")},
+        });
+        break;
+    case shading_algorithm::DUST_HDDA:
+        _render_shader = std::make_unique<gl::shader>(std::vector<source>{
+            source{.type = type::VERTEX, .path = utils::resource_path("glsl/default.vert")},
+            source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/pnanovdb_pre.glsl")},
+            source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/pnanovdb.glsl")},
+            source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/pnanovdb_post.glsl")},
+            source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/dust_hdda.frag")},
+        });
+        break;
+    case shading_algorithm::DUST_RM:
+        _render_shader = std::make_unique<gl::shader>(std::vector<source>{
+            source{.type = type::VERTEX, .path = utils::resource_path("glsl/default.vert")},
+            source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/pnanovdb_pre.glsl")},
+            source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/pnanovdb.glsl")},
+            source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/pnanovdb_post.glsl")},
+            source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/dust_rm.frag")},
+        });
+        break;
+    }
+}
+
+volume_resource_base::shading_algorithm volume_resource_base::get_shading_algorithm()
+{
+    return _current_shading_algorithm;
+}
+
+int volume_resource_base::get_old_unused_block_number()
+{
+    int block = -1;
+    std::chrono::steady_clock::time_point tp = _ssbo_timestamp[0];
+
+    for (int i = 0; i < MAX_BLOCKS; ++i)
+    {
+        if (_ssbo_block_frame[i] != _current_frame && tp >= _ssbo_timestamp[i])
+        {
+            block = i;
+        }
+    }
+
+    return block;
+}
+
+int volume_resource_base::get_active_block_number()
+{
+    for (int i = 0; i < MAX_BLOCKS; ++i)
+    {
+        if (_ssbo_block_frame[i] == _current_frame)
+        {
+            return i;
+        }
+    }
+
+    return -1;
 }
 
 void volume_resource_base::init(scene::object_context &ctx)
@@ -90,16 +155,7 @@ void volume_resource_base::init(scene::object_context &ctx)
     using type = gl::shader::source::type_e;
     using attr = gl::vertex_array::attribute;
 
-    _render_shader = std::make_unique<gl::shader>(std::vector<source>{
-        source{.type = type::VERTEX, .path = utils::resource_path("glsl/default.vert")},
-        source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/pnanovdb_pre.glsl")},
-        source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/pnanovdb.glsl")},
-        source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/pnanovdb_post.glsl")},
-        source{.type = type::FRAGMENT, .path = utils::resource_path("glsl/default.frag")},
-    });
-
-    glShaderStorageBlockBinding(*_render_shader, 0, gl::buffer_base_indices::SSBO_0);
-    glUniformBlockBinding(*_render_shader, 0, gl::buffer_base_indices::UBO_0);
+    set_shading_algorithm(shading_algorithm::DEBUG);
 
     _vertex_array = std::make_unique<gl::vertex_array>();
     _vertex_buffer = std::make_shared<gl::vertex_buffer>();
@@ -123,19 +179,39 @@ void volume_resource_base::init(scene::object_context &ctx)
 
         _world_data = std::move(objects[0]);
     }
-
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, _ssbo);
 }
 
 void volume_resource_base::update(scene::object_context &ctx, float delta_time)
 {
     const auto &active_frame = _frames[_current_frame];
 
+    // check frame
+
+    int block = get_active_block_number();
+
+    if (block != -1 && _ssbo_block_loaded[block].valid()) // fails if frame is not scheduled or already loaded
+    {
+        const auto update_range = _ssbo_block_loaded[block].get(); // unlocks when frame is loaded
+
+        if (update_range.size != 0)
+        {
+            auto flush_t1 = std::chrono::steady_clock::now();
+            glFlushMappedNamedBufferRange(_ssbo, block * _ssbo_block_size, update_range.size);
+            _world_data->set_vdb_data_offsets(update_range.offsets);
+            _world_data->update_buffer();
+            auto flush_t2 = std::chrono::steady_clock::now();
+
+            utils::update_flush_time(std::chrono::duration_cast<std::chrono::microseconds>(flush_t2 - flush_t1).count());
+        }
+    }
+
     try
     {
         _world_data->update(ctx, delta_time);
         glBindVertexArray(*_vertex_array);
-        glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, _ssbo, 0, _ssbo_block_size);
+        glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, _ssbo, block * _ssbo_block_size, _ssbo_block_size);
+        glShaderStorageBlockBinding(*_render_shader, 0, gl::buffer_base_indices::SSBO_0);
+        glUniformBlockBinding(*_render_shader, 0, gl::buffer_base_indices::UBO_0);
         glUseProgram(*_render_shader);
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
@@ -148,6 +224,9 @@ void volume_resource_base::update(scene::object_context &ctx, float delta_time)
     }
     catch (std::exception &e)
     {
+        // So your PC doesn't burn on shader trying to burst-recompile post failure. I will not fix this it's dev only problem.
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
         if (e.what() != _last_error)
         {
             if (_exception_popup)
@@ -172,7 +251,9 @@ void volume_resource_base::update(scene::object_context &ctx, float delta_time)
         {
             _frame_overshoot -= frame_time;
             _current_frame = (_current_frame + 1) % _frames.size();
-            _ssbo_block_fences[0].sync();
+            _ssbo_block_fences[block].sync();
+
+            schedule_frame(ctx, get_old_unused_block_number(), (_current_frame + MAX_BLOCKS - 2) % _frames.size());
         }
 
         if (_frame_overshoot > frame_time)

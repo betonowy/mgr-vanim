@@ -30,7 +30,7 @@ struct vdb_type
     bool enabled;
 } vdb[2];
 
-void vdb_init()
+void vdb_init_debug()
 {
     vdb[0].grid_handle.address.byte_offset = vdb_grid_offsets[0];
 
@@ -54,6 +54,15 @@ void vdb_init()
     }
 }
 
+void vdb_init_0()
+{
+    vdb[0].grid_handle.address.byte_offset = vdb_grid_offsets[0];
+    vdb[0].tree_handle = pnanovdb_grid_get_tree(vdb[0].buf, vdb[0].grid_handle);
+    vdb[0].root_handle = pnanovdb_tree_get_root(vdb[0].buf, vdb[0].tree_handle);
+    pnanovdb_readaccessor_init(vdb[0].accessor, vdb[0].root_handle);
+    vdb[0].grid_type = pnanovdb_grid_get_grid_type(vdb[0].buf, vdb[0].grid_handle);
+}
+
 PNANOVDB_FORCE_INLINE float pnanovdb_root_read_float_typed(pnanovdb_grid_type_t grid_type, pnanovdb_buf_t buf, pnanovdb_address_t address, PNANOVDB_IN(pnanovdb_coord_t) ijk, pnanovdb_uint32_t level)
 {
     float ret;
@@ -73,4 +82,17 @@ PNANOVDB_FORCE_INLINE float pnanovdb_root_read_float_typed(pnanovdb_grid_type_t 
         ret = pnanovdb_read_float(buf, address);
     }
     return ret;
+}
+
+vec3 vdb_hdda_to_pos(vec3 origin, vec3 dir, float t)
+{
+    return origin + dir * t;
+}
+
+float vdb_read_world_value_0(vec3 pos)
+{
+    pnanovdb_coord_t ijk = pnanovdb_hdda_pos_to_ijk(pos); 
+    pnanovdb_uint32_t level;
+    pnanovdb_address_t address = pnanovdb_readaccessor_get_value_address_and_level(vdb[0].grid_type, vdb[0].buf, vdb[0].accessor, ijk, level);
+    return pnanovdb_root_read_float_typed(vdb[0].grid_type, vdb[0].buf, address, ijk, level);
 }

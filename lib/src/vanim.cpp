@@ -66,7 +66,7 @@ void run()
         std::cout << "GLSL     : " << glGetString(GL_SHADING_LANGUAGE_VERSION) << '\n';
     }
 
-    SDL_GL_SetSwapInterval(1);
+    SDL_GL_SetSwapInterval(0);
 
     if (!gl3wIsSupported(4, 5))
     {
@@ -86,6 +86,9 @@ void run()
 
     ImGui_ImplSDL2_InitForOpenGL(window, gl_window_context);
     ImGui_ImplOpenGL3_Init("#version 150");
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     {
         scene::scene scene;

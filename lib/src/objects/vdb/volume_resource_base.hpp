@@ -27,17 +27,15 @@ public:
 
     void set_buffer_size(bool preserve_contents);
 
-    void set_load_callback(std::function<std::future<void>(int)>);
-
-    // old
+    virtual void schedule_frame(scene::object_context &, int block_number, int frame_number) = 0;
 
     void set_next_volume_data(std::shared_ptr<gl::shader_storage>, glm::uvec4 offsets);
 
-    // void set_preload_hint(float frames_ahead);
-    float get_preload_hint();
+    void set_frames_ahead(int frames_ahead);
+    int get_frames_ahead();
 
-    void set_no_unload(bool);
-    bool get_no_unload();
+    // void set_no_unload(bool);
+    // bool get_no_unload();
 
     void set_frame_rate(float);
     float get_frame_rate();
@@ -46,8 +44,8 @@ public:
     bool get_play_animation();
 
     float get_current_time();
-    float get_min_time();
-    float get_max_time();
+    // float get_min_time();
+    // float get_max_time();
 
     const std::vector<std::string> &get_grid_names();
     void set_grid_names(std::vector<std::string>);
@@ -64,12 +62,18 @@ public:
 
     enum class shading_algorithm
     {
-        NONE,
-        WATER_CLOUD,
-        SMOKE,
-        FIRE,
-        FIRE_SMOKE,
+        DEBUG,
+        DUST_HDDA,
+        DUST_RM,
     };
+
+    static constexpr auto SHADING_ALGORITHM_LIST = {
+        shading_algorithm::DEBUG,
+        shading_algorithm::DUST_HDDA,
+        shading_algorithm::DUST_RM,
+    };
+
+    static const char *shading_algorithm_str(shading_algorithm);
 
     void set_shading_algorithm(shading_algorithm);
     shading_algorithm get_shading_algorithm();
@@ -79,7 +83,13 @@ public:
     void signal(scene::object_context &, scene::signal_e) override;
 
 protected:
-    static constexpr size_t MAX_BLOCKS = 1;
+    static constexpr size_t MAX_BLOCKS = 3;
+
+    struct update_range
+    {
+        glm::uvec4 offsets;
+        size_t size;
+    };
 
     gl::shader_storage _ssbo;
     std::byte *_ssbo_ptr;
@@ -87,6 +97,8 @@ protected:
     size_t _ssbo_block_count = 0;
     std::array<size_t, MAX_BLOCKS> _ssbo_block_frame;
     std::array<gl::fence, MAX_BLOCKS> _ssbo_block_fences;
+    std::array<std::future<update_range>, MAX_BLOCKS> _ssbo_block_loaded;
+    std::array<std::chrono::steady_clock::time_point, MAX_BLOCKS> _ssbo_timestamp;
 
     struct frame
     {
@@ -105,7 +117,12 @@ protected:
     std::shared_ptr<objects::misc::world_data> _world_data;
 
 private:
+    int get_old_unused_block_number();
+    int get_active_block_number();
+
     std::unique_ptr<gl::shader> _render_shader;
+    shading_algorithm _current_shading_algorithm = shading_algorithm::DEBUG;
+
     std::unique_ptr<gl::vertex_array> _vertex_array;
     std::shared_ptr<gl::vertex_buffer> _vertex_buffer;
     std::shared_ptr<objects::ui::popup> _exception_popup;
@@ -113,10 +130,10 @@ private:
 
     std::string _last_error;
 
-    float _preload_hint{};
-    float _min_time{}, _max_time{}, _current_time{};
+    int _frames_ahead{};
+    float _current_time{};
     float _frame_rate{};
-    bool _play_animation{}, _no_unload{};
+    bool _play_animation{};
 
     size_t _ad_hoc_loads{}, _force_loads{};
 };

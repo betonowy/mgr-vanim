@@ -45,11 +45,25 @@ void debug_window::update(scene::object_context &ctx, float delta_time)
     {
         {
             ImGui::Text("FPS Sample: %.1f", sample_fps);
-            ImGui::Text("Sample ms: %.2f", delta_time * 1e3f);
             ImGui::Text("FPS Average: %.1f", average_fps);
+            ImGui::Text("Sample ms: %.2f", delta_time * 1e3f);
             ImGui::Text("Average ms: %.2f", average * 1e3f);
-            ImGui::Text("Minimum ms: %.2f", max_element * 1e3f);
-            ImGui::Text("Maximum ms: %.2f", min_element * 1e3f);
+            ImGui::Text("Minimum ms: %.2f", min_element * 1e3f);
+            ImGui::Text("Maximum ms: %.2f", max_element * 1e3f);
+        }
+
+        ImGui::Separator();
+
+        {
+            float map_time_ms = utils::get_map_time() * 1e-3;
+            float fence_time_ms = utils::get_wait_time() * 1e-3;
+            float copy_time_ms = utils::get_copy_time() * 1e-3;
+            float flush_time_ms = utils::get_flush_time() * 1e-3;
+
+            ImGui::Text("Map time: %.3f ms", map_time_ms);
+            ImGui::Text("Fence time: %.3f ms", fence_time_ms);
+            ImGui::Text("Copy time: %.3f ms", copy_time_ms);
+            ImGui::Text("Flush time: %.3f ms", flush_time_ms);
         }
 
         ImGui::Separator();
@@ -124,8 +138,8 @@ void debug_window::update(scene::object_context &ctx, float delta_time)
 
     if (_fps_soft_cap)
     {
-        _wait_time = glm::mix(glm::max(0.02f - delta_time, 0.f), _wait_time, 0.8f);
-        std::this_thread::sleep_for(std::chrono::microseconds(static_cast<size_t>(_wait_time * 1e6f)));
+        std::this_thread::sleep_until(tp);
+        tp = std::chrono::steady_clock::now() + std::chrono::milliseconds(5);
     }
 
     if (_auto_recompile)

@@ -31,25 +31,33 @@ void animation_controller::update(scene::object_context &ctx, float)
     {
         ImGui::TextUnformatted("NanoVDB animation");
 
-        {
-            float preload = _volume_resource->get_preload_hint();
-            ImGui::SliderFloat("Load ahead (seconds)", &preload, 0.f, 0.5f, "%.3f", ImGuiSliderFlags_Logarithmic);
-            // _volume_resource->set_preload_hint(preload);
-        }
+        // {
+        //     float preload = _volume_resource->get_preload_hint();
+        //     ImGui::SliderFloat("Load ahead (seconds)", &preload, 0.f, 0.5f, "%.3f", ImGuiSliderFlags_Logarithmic);
+        //     // _volume_resource->set_preload_hint(preload);
+        // }
 
-        ImGui::Text("Buffer count: %d", static_cast<int>(_volume_resource->get_preload_hint() * _volume_resource->get_frame_rate() + 1));
-        ImGui::SameLine();
-        ImGui::Text("Ad hoc loads: %lu", _volume_resource->get_ad_hoc_loads());
-        ImGui::SameLine();
-        ImGui::Text("Force loads: %lu", _volume_resource->get_force_loads());
+        // #ifdef VANIM_WINDOWS
+        //         ImGui::Text("Buffer count: %d", static_cast<int>(_volume_resource->get_preload_hint() * _volume_resource->get_frame_rate() + 1));
+        //         ImGui::SameLine();
+        //         ImGui::Text("Ad hoc loads: %llu", _volume_resource->get_ad_hoc_loads());
+        //         ImGui::SameLine();
+        //         ImGui::Text("Force loads: %llu", _volume_resource->get_force_loads());
+        // #else
+        //         ImGui::Text("Buffer count: %d", static_cast<int>(_volume_resource->get_preload_hint() * _volume_resource->get_frame_rate() + 1));
+        //         ImGui::SameLine();
+        //         ImGui::Text("Ad hoc loads: %lu", _volume_resource->get_ad_hoc_loads());
+        //         ImGui::SameLine();
+        //         ImGui::Text("Force loads: %lu", _volume_resource->get_force_loads());
+        // #endif
 
-        {
-            bool no_unload = _volume_resource->get_no_unload();
-            ImGui::Checkbox("No unload", &no_unload);
-            _volume_resource->set_no_unload(no_unload);
-        }
+        // {
+        //     bool no_unload = _volume_resource->get_no_unload();
+        //     ImGui::Checkbox("No unload", &no_unload);
+        //     _volume_resource->set_no_unload(no_unload);
+        // }
 
-        ImGui::SameLine();
+        // ImGui::SameLine();
 
         {
             bool play_animation = _volume_resource->get_play_animation();
@@ -57,11 +65,35 @@ void animation_controller::update(scene::object_context &ctx, float)
             _volume_resource->set_play_animation(play_animation);
         }
 
-#ifdef VANIM_WINDOWS
-        ImGui::Text("Ad hoc loads: %llu", _volume_resource->get_ad_hoc_loads());
-        ImGui::Text("Force loads: %llu", _volume_resource->get_force_loads());
-#else
-#endif
+        ImGui::Separator();
+
+        if (ImGui::TreeNode("Grids"))
+        {
+            for (const auto &grid : _volume_resource->get_grid_names())
+            {
+                ImGui::Bullet();
+                ImGui::TextUnformatted(grid.c_str());
+            }
+
+            ImGui::TreePop();
+        }
+
+        ImGui::Separator();
+
+        ImGui::TextUnformatted("Shading algorithms");
+
+        if (ImGui::BeginCombo("Shader", vdb::volume_resource_base::shading_algorithm_str(_volume_resource->get_shading_algorithm())))
+        {
+            for (const auto &shader : vdb::volume_resource_base::SHADING_ALGORITHM_LIST)
+            {
+                if (ImGui::Selectable(vdb::volume_resource_base::shading_algorithm_str(shader)))
+                {
+                    _volume_resource->set_shading_algorithm(shader);
+                }
+            }
+
+            ImGui::EndCombo();
+        }
     }
     ImGui::End();
 }
