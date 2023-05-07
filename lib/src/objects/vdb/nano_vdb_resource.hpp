@@ -13,12 +13,9 @@ public:
     void schedule_frame(scene::object_context &, int block_number, int frame_number) override;
 
     void init(scene::object_context &) override;
-    void update(scene::object_context &, float) override;
 
 private:
     std::filesystem::path _resource_directory;
     std::vector<std::pair<int, std::filesystem::path>> _nvdb_frames;
-
-    size_t max_buffer_size;
 };
 } // namespace objects::vdb

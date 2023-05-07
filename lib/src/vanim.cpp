@@ -16,9 +16,20 @@
 #include "objects/misc/world_data.hpp"
 #include "objects/ui/debug_window.hpp"
 #include "objects/ui/main_menu.hpp"
-#include "objects/vdb/volume_resource_base.hpp"
 #include "scene/object_context.hpp"
 #include "scene/scene.hpp"
+
+#ifdef VANIM_WINDOWS
+extern "C" 
+{
+  __declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
+}
+
+extern "C"
+{
+  __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+}
+#endif
 
 namespace vanim
 {

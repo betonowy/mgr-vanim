@@ -29,7 +29,9 @@ nano_vdb_resource::nano_vdb_resource(std::filesystem::path path)
     using match_type = std::cmatch;
 #endif
 
-    auto path_to_frame_number = [r = regex_type(regex_pattern)](const std::filesystem::path &path) -> int {
+    auto r = regex_type(regex_pattern);
+    // MSVC will experience internal error if I limit scope of "r" to this lambda. This is BS.
+    auto path_to_frame_number = [&](const std::filesystem::path &path) -> int {
         match_type cm;
 
         if (std::regex_search(path.c_str(), cm, r))
@@ -112,7 +114,7 @@ void nano_vdb_resource::init(scene::object_context &ctx)
 
     set_frame_rate(30.f);
 
-    max_buffer_size = 0;
+    size_t max_buffer_size = 0;
 
     for (const auto &[n, path] : _nvdb_frames)
     {
@@ -184,50 +186,5 @@ void nano_vdb_resource::init(scene::object_context &ctx)
     {
         schedule_frame(ctx, i, i);
     }
-}
-
-void nano_vdb_resource::update(scene::object_context &ctx, float delta_time)
-{
-    // if (_ssbo_block_frame[0] != _current_frame)
-    // {
-    //     glm::uvec4 offsets(~0);
-    //     size_t copy_size = 0;
-
-    //     auto map_t1 = std::chrono::steady_clock::now();
-    //     utils::nvdb_mmap nvdb_file(_nvdb_frames[_current_frame].second.string());
-    //     const auto &grids = nvdb_file.grids();
-    //     auto map_t2 = std::chrono::steady_clock::now();
-
-    //     utils::update_map_time(std::chrono::duration_cast<std::chrono::microseconds>(map_t2 - map_t1).count());
-
-    //     auto wait_t1 = std::chrono::steady_clock::now();
-    //     _ssbo_block_fences[0].client_wait(true);
-    //     auto wait_t2 = std::chrono::steady_clock::now();
-
-    //     utils::update_wait_time(std::chrono::duration_cast<std::chrono::microseconds>(wait_t2 - wait_t1).count());
-
-    //     auto copy_t1 = std::chrono::steady_clock::now();
-    //     for (size_t i = 0; i < grids.size(); ++i)
-    //     {
-    //         offsets[i] = copy_size;
-    //         std::memcpy(_ssbo_ptr + copy_size, grids[i].ptr, grids[i].size);
-    //         copy_size += grids[i].size;
-    //     }
-    //     auto copy_t2 = std::chrono::steady_clock::now();
-
-    //     utils::update_copy_time(std::chrono::duration_cast<std::chrono::microseconds>(copy_t2 - copy_t1).count());
-
-    //     _world_data->set_vdb_data_offsets(offsets);
-
-    //     auto flush_t1 = std::chrono::steady_clock::now();
-    //     glFlushMappedNamedBufferRange(_ssbo, 0, copy_size);
-    //     auto flush_t2 = std::chrono::steady_clock::now();
-
-    //     utils::update_flush_time(std::chrono::duration_cast<std::chrono::microseconds>(flush_t2 - flush_t1).count());
-
-    //     _ssbo_block_frame[0] = _current_frame;
-    // }
-
-    volume_resource_base::update(ctx, delta_time);
 }
 } // namespace objects::vdb
