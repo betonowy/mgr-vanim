@@ -20,21 +20,30 @@
 #include "scene/scene.hpp"
 
 #ifdef VANIM_WINDOWS
-extern "C" 
+extern "C"
 {
-  __declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
+    __declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
 }
 
 extern "C"
 {
-  __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+    __declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
 }
 #endif
+
+#include <converter/nvdb_diff.hpp>
 
 namespace vanim
 {
 void run()
 {
+    {
+        std::filesystem::path src = "C:\\Users\\mbajkows\\smallCampfireVDB\\smallCampfire_0000.nvdb";
+        std::filesystem::path dst = "C:\\Users\\mbajkows\\smallCampfireVDB\\smallCampfire_0001.nvdb";
+        converter::create_nvdb_diff(std::move(src), std::move(dst));
+        return;
+    }
+
     openvdb::initialize();
 
     SDL_Init(SDL_INIT_EVERYTHING);
