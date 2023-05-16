@@ -31,16 +31,35 @@ extern "C"
 }
 #endif
 
-#include <converter/nvdb_diff.hpp>
+#include <converter/dvdb_converter.hpp>
 
 namespace vanim
 {
 void run()
 {
     {
-        std::filesystem::path src = "C:\\Users\\mbajkows\\smallCampfireVDB\\smallCampfire_0000.nvdb";
-        std::filesystem::path dst = "C:\\Users\\mbajkows\\smallCampfireVDB\\smallCampfire_0001.nvdb";
-        converter::create_nvdb_diff(std::move(src), std::move(dst));
+        std::filesystem::path src = "/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_2.nvdb";
+        std::filesystem::path dst = "/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_3.nvdb";
+
+        converter::dvdb_converter dvdb;
+
+        {
+            auto t1 = std::chrono::steady_clock::now();
+            dvdb.create_keyframe(src);
+            auto t2 = std::chrono::steady_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+
+            std::cout << "Keyframe: " << dur * 1e-3 << " ms\n";
+        }
+        {
+            auto t1 = std::chrono::steady_clock::now();
+            dvdb.add_diff_frame(dst);
+            auto t2 = std::chrono::steady_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+
+            std::cout << "Diff: " << dur * 1e-3 << " ms\n";
+        }
+        // converter::create_nvdb_diff(std::move(src), std::move(dst));
         return;
     }
 

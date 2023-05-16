@@ -17,6 +17,10 @@ set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/vcpkg/scripts/b
 
 project(Vanim)
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    add_compile_options(-march=znver2)
+endif()
+
 include(cmake/deps.cmake)
 include(cmake/tests.cmake)
 

@@ -20,6 +20,11 @@ target_include_directories(vanim
         "src"
 )
 
+target_compile_definitions(vanim
+    PRIVATE
+        "PNANOVDB_C"
+)
+
 if(WIN32)
     target_compile_definitions(vanim
         PRIVATE
