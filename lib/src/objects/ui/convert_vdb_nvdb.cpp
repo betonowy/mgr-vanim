@@ -95,7 +95,7 @@ void convert_vdb_nvdb::init(scene::object_context &ctx)
         std::make_unique<decltype(_current_status.next_job)::element_type>(ctx.generic_thread_pool().enqueue(std::move(directory_job)));
 }
 
-void convert_vdb_nvdb::update(scene::object_context &ctx, float delta_time)
+void convert_vdb_nvdb::update(scene::object_context &ctx, float)
 {
     if (_current_status.finished)
     {

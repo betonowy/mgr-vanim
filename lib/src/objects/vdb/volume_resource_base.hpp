@@ -23,7 +23,7 @@ namespace objects::vdb
 class volume_resource_base : public scene::object
 {
 public:
-    // virtual std::vector<std::filesystem::path> discover_data(std::filesystem::path) = 0;
+    virtual const char* class_name() = 0;
 
     void set_buffer_size(bool preserve_contents);
 

@@ -11,6 +11,8 @@
 
 #include <immintrin.h>
 
+#include <dvdb/dvdb_rle.hpp>
+
 namespace
 {
 size_t vdb_determine_leafless_copy_size_direct_ptr(const void *data)
@@ -20,36 +22,66 @@ size_t vdb_determine_leafless_copy_size_direct_ptr(const void *data)
     const pnanovdb_grid_handle_t grid{}; // Zero initialized is ok, because buffers are aligned that way
     const pnanovdb_tree_handle_t tree = pnanovdb_grid_get_tree(buf, grid);
 
-    return pnanovdb_tree_get_node_offset_leaf(buf, tree);
+    return pnanovdb_tree_get_node_offset_leaf(buf, tree) + tree.address.byte_offset;
 }
 
-struct rle_diff_desc
+namespace details
 {
-    uint32_t src_leaf, dst_leaf;
-    float min, max;
-};
+size_t vdb_get_lower_leaf_count(pnanovdb_buf_t buf, pnanovdb_lower_handle_t lower)
+{
+    size_t count = 0;
 
-struct rle_diff_code
-{
-    union {
-        struct
+    for (size_t i = 0; i < PNANOVDB_LOWER_TABLE_COUNT; ++i)
+    {
+        if (pnanovdb_lower_get_child_mask(buf, lower, i))
         {
-            uint16_t length, value;
-        };
-
-        uint32_t bits;
-    };
-
-    float float_value(const rle_diff_desc &desc)
-    {
-        return desc.min + (desc.max - desc.min) * (value * (1.f / std::numeric_limits<decltype(value)>::max()));
+            ++count;
+        }
     }
 
-    void set_value(const rle_diff_desc &desc, float value)
+    return count;
+}
+
+size_t vdb_get_upper_leaf_count(pnanovdb_buf_t buf, pnanovdb_upper_handle_t upper)
+{
+    size_t count = 0;
+
+    for (size_t i = 0; i < PNANOVDB_UPPER_TABLE_COUNT; ++i)
     {
-        assert(value <= desc.max && value >= desc.min);
+        if (pnanovdb_upper_get_child_mask(buf, upper, i))
+        {
+            count += vdb_get_lower_leaf_count(buf, pnanovdb_upper_get_child(PNANOVDB_GRID_TYPE_FLOAT, buf, upper, i));
+        }
     }
-};
+
+    return count;
+}
+
+size_t vdb_get_tile_leaf_count(pnanovdb_buf_t buf, pnanovdb_root_handle_t root, pnanovdb_root_tile_handle_t tile)
+{
+    if (pnanovdb_int64_is_zero(pnanovdb_root_tile_get_child(buf, tile)))
+    {
+        return 0;
+    }
+
+    return vdb_get_upper_leaf_count(buf, pnanovdb_root_get_child(PNANOVDB_GRID_TYPE_FLOAT, buf, root, tile));
+}
+} // namespace details
+
+size_t vdb_get_actual_leaf_count(pnanovdb_buf_t buf, pnanovdb_tree_handle_t tree)
+{
+    const auto root = pnanovdb_tree_get_root(buf, tree);
+    const auto tile_count = pnanovdb_root_get_tile_count(buf, root);
+
+    size_t count = 0;
+
+    for (size_t i = 0; i < tile_count; ++i)
+    {
+        count += details::vdb_get_tile_leaf_count(buf, root, pnanovdb_root_get_tile(PNANOVDB_GRID_TYPE_FLOAT, root, i));
+    }
+
+    return count;
+}
 
 std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_state, void *final_state)
 {
@@ -61,8 +93,16 @@ std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_
     pnanovdb_grid_handle_t src_grid{}, dst_grid{}, final_grid{};
     pnanovdb_tree_handle_t src_tree, dst_tree, final_tree;
 
+    src_tree = pnanovdb_grid_get_tree(src_buf, src_grid);
     dst_tree = pnanovdb_grid_get_tree(dst_buf, dst_grid);
+
+    const auto src_leaf_count = pnanovdb_tree_get_node_count_leaf(src_buf, src_tree);
     const auto dst_leaf_count = pnanovdb_tree_get_node_count_leaf(dst_buf, dst_tree);
+
+    const auto dst_big_leaf_count = vdb_get_actual_leaf_count(dst_buf, dst_tree);
+
+    const auto src_leaf_offset = pnanovdb_tree_get_node_offset_leaf(src_buf, src_tree) + src_tree.address.byte_offset;
+    const auto dst_leaf_offset = pnanovdb_tree_get_node_offset_leaf(dst_buf, dst_tree) + dst_tree.address.byte_offset;
 
     std::vector<uint8_t> output_data;
 
@@ -77,17 +117,18 @@ std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_
 
     for (uint32_t i = 0; i < dst_leaf_count; ++i)
     {
-        rle_diff_desc desc = {
+        dvdb::rle_diff_desc desc = {
             .src_leaf = 0,
             .dst_leaf = i,
             .min = 0,
             .max = 1,
         };
 
-        rle_diff_code code = {
-            .length = PNANOVDB_LEAF_TABLE_COUNT,
-            .value = 0,
-        };
+        float *floats = (float *)dst_buf.data + ((dst_leaf_offset + pnanovdb_grid_type_constants[PNANOVDB_GRID_TYPE_FLOAT].leaf_off_table + pnanovdb_grid_type_constants[PNANOVDB_GRID_TYPE_FLOAT].leaf_size * i) >> 2);
+
+        dvdb::rle_diff_code code;
+
+        std::memcpy(code.values, floats, sizeof(code.values));
 
         push_bytes(&desc, sizeof(desc));
         push_bytes(&code, sizeof(code));
@@ -106,7 +147,7 @@ struct dvdb_state
 };
 
 dvdb_converter::dvdb_converter(std::shared_ptr<utils::thread_pool> pool)
-    : _state(std::make_unique<dvdb_state>()), _thread_pool(std::move(pool))
+    : _thread_pool(std::move(pool)), _state(std::make_unique<dvdb_state>())
 {
 }
 
@@ -125,6 +166,7 @@ void dvdb_converter::create_keyframe(std::filesystem::path path)
             .frame_type = dvdb::frame_type_e::KEY_FRAME,
             .vdb_grid_count = nvdb_mmap.grids().size(),
             .vdb_required_size = sizeof(header),
+            .frames = {},
         };
 
         for (size_t i = 0; i < nvdb_mmap.grids().size(); ++i)
@@ -206,7 +248,7 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
         .frame_type = dvdb::frame_type_e::DIFF_FRAME,
         .vdb_grid_count = current_state_header->vdb_grid_count,
         .vdb_required_size = sizeof(next_state_header),
-    };
+        .frames = {}};
 
     for (size_t i = 0; i < nvdb_mmap.grids().size(); ++i)
     {
@@ -257,6 +299,12 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
         compressed_header.vdb_required_size += grid.size;
 
         compressed_base_tree_offset += leafless_size;
+    }
+
+    for (size_t i = 0; i < nvdb_mmap.grids().size(); ++i)
+    {
+        compressed_header.frames[i].diff_data_offset_start = compressed_base_tree_offset;
+        compressed_base_tree_offset += diff_data_chunks[i].size();
     }
 
     {

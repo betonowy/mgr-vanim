@@ -2,7 +2,7 @@
 
 #include <vanim.hpp>
 
-int main(int argc, char **argv)
+int main()
 {
     vanim::run();
     return 0;

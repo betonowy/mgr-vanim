@@ -3,9 +3,11 @@
 #include <imgui.h>
 
 #include "../vdb/nano_vdb_resource.hpp"
+#include "../vdb/diff_vdb_resource.hpp"
 
 #include "animation_controller.hpp"
 #include "convert_vdb_nvdb.hpp"
+#include "convert_nvdb_dvdb.hpp"
 #include "debug_window.hpp"
 #include "file_dialog.hpp"
 #include "popup.hpp"
@@ -90,6 +92,10 @@ void main_menu::update(scene::object_context &ctx, float)
 
             if (ImGui::MenuItem("Convert OpenVDB to custom format"))
             {
+                ctx.add_object(std::make_shared<file_dialog>([ctx = &ctx](std::filesystem::path path) -> bool {
+                    ctx->add_object(std::make_shared<convert_nvdb_dvdb>(std::move(path)));
+                    return true;
+                }));
             }
 
             if (ImGui::MenuItem("Open NanoVDB animation"))
@@ -121,6 +127,29 @@ void main_menu::update(scene::object_context &ctx, float)
 
             if (ImGui::MenuItem("Open custom animation"))
             {
+                for (const auto &object : ctx.find_objects<animation_controller>())
+                {
+                    object->destroy();
+                }
+
+                ctx.share_object(std::make_shared<file_dialog>([ctx = &ctx](std::filesystem::path path) -> bool {
+                    try
+                    {
+                        auto resource = ctx->share_object(std::make_shared<vdb::diff_vdb_resource>(std::move(path)));
+                        ctx->add_object(std::make_shared<animation_controller>(std::move(resource)));
+                        return true;
+                    }
+                    catch (utils::utf8_exception &e)
+                    {
+                        ctx->add_object(std::make_shared<popup>(u8"Can't load Custom animation", e.utf8_what()));
+                        return false;
+                    }
+                    catch (std::exception &e)
+                    {
+                        ctx->add_object(std::make_shared<popup>(u8"Can't load Custom animation", reinterpret_cast<const char8_t*>(e.what())));
+                        return false;
+                    }
+                }));
             }
 
             ImGui::Separator();

@@ -14,6 +14,8 @@ public:
 
     void init(scene::object_context &) override;
 
+    const char* class_name() override;
+
 private:
     std::filesystem::path _resource_directory;
     std::vector<std::pair<int, std::filesystem::path>> _nvdb_frames;

@@ -18,6 +18,7 @@
 #include "objects/ui/main_menu.hpp"
 #include "scene/object_context.hpp"
 #include "scene/scene.hpp"
+#include "utils/cpu_architecture.hpp"
 
 #ifdef VANIM_WINDOWS
 extern "C"
@@ -38,29 +39,61 @@ namespace vanim
 void run()
 {
     {
-        std::filesystem::path src = "/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_2.nvdb";
-        std::filesystem::path dst = "/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_3.nvdb";
+        const auto arch = utils::get_cpu_available_feature_level();
+        std::cout << "Detected available CPU feature level: " << utils::cpu_available_feature_level_str(arch) << '\n';
+    }
 
-        converter::dvdb_converter dvdb;
+    {
+        // std::filesystem::path src = "/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_0.nvdb";
+        // std::filesystem::path dst = "/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_1.nvdb";
+        // // std::filesystem::path dst = "/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_2.nvdb";
+        // // std::filesystem::path dst = "/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_3.nvdb";
+        // // std::filesystem::path dst = "/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_4.nvdb";
 
-        {
-            auto t1 = std::chrono::steady_clock::now();
-            dvdb.create_keyframe(src);
-            auto t2 = std::chrono::steady_clock::now();
-            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+        // converter::dvdb_converter dvdb;
 
-            std::cout << "Keyframe: " << dur * 1e-3 << " ms\n";
-        }
-        {
-            auto t1 = std::chrono::steady_clock::now();
-            dvdb.add_diff_frame(dst);
-            auto t2 = std::chrono::steady_clock::now();
-            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+        // {
+        //     auto t1 = std::chrono::steady_clock::now();
+        //     dvdb.create_keyframe("/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_0.nvdb");
+        //     auto t2 = std::chrono::steady_clock::now();
+        //     auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
 
-            std::cout << "Diff: " << dur * 1e-3 << " ms\n";
-        }
-        // converter::create_nvdb_diff(std::move(src), std::move(dst));
-        return;
+        //     std::cout << "Keyframe: " << dur * 1e-3 << " ms\n";
+        // }
+        // {
+        //     auto t1 = std::chrono::steady_clock::now();
+        //     dvdb.create_keyframe("/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_1.nvdb");
+        //     auto t2 = std::chrono::steady_clock::now();
+        //     auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+
+        //     std::cout << "Diff: " << dur * 1e-3 << " ms\n";
+        // }
+        // {
+        //     auto t1 = std::chrono::steady_clock::now();
+        //     dvdb.add_diff_frame("/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_2.nvdb");
+        //     auto t2 = std::chrono::steady_clock::now();
+        //     auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+
+        //     std::cout << "Diff: " << dur * 1e-3 << " ms\n";
+        // }
+        // {
+        //     auto t1 = std::chrono::steady_clock::now();
+        //     dvdb.create_keyframe("/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_3.nvdb");
+        //     auto t2 = std::chrono::steady_clock::now();
+        //     auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+
+        //     std::cout << "Keyframe: " << dur * 1e-3 << " ms\n";
+        // }
+        // {
+        //     auto t1 = std::chrono::steady_clock::now();
+        //     dvdb.add_diff_frame("/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_4.nvdb");
+        //     auto t2 = std::chrono::steady_clock::now();
+        //     auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
+
+        //     std::cout << "Diff: " << dur * 1e-3 << " ms\n";
+        // }
+        // // converter::create_nvdb_diff(std::move(src), std::move(dst));
+        // return;
     }
 
     openvdb::initialize();

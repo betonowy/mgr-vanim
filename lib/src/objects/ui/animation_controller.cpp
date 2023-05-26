@@ -29,7 +29,7 @@ void animation_controller::update(scene::object_context &ctx, float)
 
     if (ImGui::Begin("Animation Controller"))
     {
-        ImGui::TextUnformatted("NanoVDB animation");
+        ImGui::TextUnformatted(_volume_resource->class_name());
 
         // {
         //     float preload = _volume_resource->get_preload_hint();

@@ -36,3 +36,11 @@ else()
             VANIM_UNIX
     )
 endif()
+
+file(GLOB_RECURSE DVDB_SRC src/dvdb/*.cpp)
+
+add_executable(dvdb_benchmarks test/dvdb_benchmarks.cpp test/dvdb_benchmark_cases.cpp ${DVDB_SRC})
+target_include_directories(dvdb_benchmarks PRIVATE src/dvdb)
+target_link_libraries(dvdb_benchmarks PRIVATE Catch2::Catch2WithMain glm::glm)
+
+add_test(NAME dvdb_benchmarks COMMAND dvdb_benchmarks)

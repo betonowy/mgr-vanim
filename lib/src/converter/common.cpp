@@ -8,7 +8,7 @@ std::vector<std::filesystem::path> find_files_with_extension(std::filesystem::pa
 
     std::vector<std::filesystem::path> files;
 
-    for (const auto entry : dir_it)
+    for (const auto &entry : dir_it)
     {
         if (entry.is_regular_file() && entry.path().extension() == extension)
         {
