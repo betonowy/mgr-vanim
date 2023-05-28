@@ -10,7 +10,7 @@
 
 namespace cases
 {
-void copy_for_loop_scl(const float *restrict input, float *restrict output, const float *restrict work_group)
+void copy_for_loop_scl(const float *dvdb_restrict input, float *dvdb_restrict output, const float *dvdb_restrict work_group)
 {
 #pragma GCC unroll 4
     for (int i = 0; i < INTERFACE_SIZE; ++i)
@@ -19,14 +19,14 @@ void copy_for_loop_scl(const float *restrict input, float *restrict output, cons
     }
 }
 
-void copy_for_loop_avx(const float *restrict input, float *restrict output, const float *restrict work_group)
+void copy_for_loop_avx(const float *dvdb_restrict input, float *dvdb_restrict output, const float *dvdb_restrict work_group)
 {
 #pragma GCC unroll 64
     for (int i = 0; i < INTERFACE_SIZE; i += 8)
     {
         __m256 ymm_i = _mm256_load_ps(input + i);
         __m256 ymm_w = _mm256_load_ps(work_group + i);
-        _mm256_store_ps(output + i, ymm_i * ymm_w);
+        _mm256_store_ps(output + i, _mm256_mul_ps(ymm_i, ymm_w));
     }
 }
 
@@ -56,7 +56,7 @@ void cube_value_offset_scl(const float *input, float *output, int ox, int oy, in
     }
 }
 
-void cube_value_offset_avx(const float *restrict input, float *restrict output, int ox, int oy, int oz)
+void cube_value_offset_avx(const float *dvdb_restrict input, float *dvdb_restrict output, int ox, int oy, int oz)
 {
     ox = -ox & 0b111;
     oy &= 7;
@@ -115,7 +115,7 @@ void cube_value_offset_avx(const float *restrict input, float *restrict output, 
     }
 }
 
-void cube_diff_scl(const float *restrict a, const float *restrict b, float *restrict diff)
+void cube_diff_scl(const float *dvdb_restrict a, const float *dvdb_restrict b, float *dvdb_restrict diff)
 {
 #pragma GCC unroll 32
     for (int i = 0; i < INTERFACE_SIZE; ++i)
@@ -124,18 +124,18 @@ void cube_diff_scl(const float *restrict a, const float *restrict b, float *rest
     }
 }
 
-void cube_diff_avx(const float *restrict a, const float *restrict b, float *restrict diff)
+void cube_diff_avx(const float *dvdb_restrict a, const float *dvdb_restrict b, float *dvdb_restrict diff)
 {
 #pragma GCC unroll 64
     for (int i = 0; i < INTERFACE_SIZE; i += 8)
     {
         __m256 ymm_a = _mm256_loadu_ps(a + i);
         __m256 ymm_b = _mm256_loadu_ps(b + i);
-        _mm256_storeu_ps(diff + i, ymm_a - ymm_b);
+        _mm256_storeu_ps(diff + i, _mm256_sub_ps(ymm_a, ymm_b));
     }
 }
 
-void cube_diff_epi8_scl(const int8_t *restrict a, const int8_t *restrict b, int8_t *restrict diff)
+void cube_diff_epi8_scl(const int8_t *dvdb_restrict a, const int8_t *dvdb_restrict b, int8_t *dvdb_restrict diff)
 {
 #pragma GCC unroll 16
     for (int i = 0; i < INTERFACE_SIZE; ++i)
@@ -144,18 +144,18 @@ void cube_diff_epi8_scl(const int8_t *restrict a, const int8_t *restrict b, int8
     }
 }
 
-void cube_diff_epi8_avx(const int8_t *restrict a, const int8_t *restrict b, int8_t *restrict diff)
+void cube_diff_epi8_avx(const int8_t *dvdb_restrict a, const int8_t *dvdb_restrict b, int8_t *dvdb_restrict diff)
 {
 #pragma GCC unroll 16
     for (int i = 0; i < INTERFACE_SIZE; i += 32)
     {
-        __m256i ymm_a = _mm256_loadu_si256((__m256i_u *)(a + i));
-        __m256i ymm_b = _mm256_loadu_si256((__m256i_u *)(b + i));
-        _mm256_storeu_si256((__m256i_u *)(diff + i), _mm256_sub_epi8(ymm_a, ymm_b));
+        __m256i ymm_a = _mm256_loadu_si256((__m256i *)(a + i));
+        __m256i ymm_b = _mm256_loadu_si256((__m256i *)(b + i));
+        _mm256_storeu_si256((__m256i *)(diff + i), _mm256_sub_epi8(ymm_a, ymm_b));
     }
 }
 
-float cube_mse_scl(const float *restrict a, const float *restrict b)
+float cube_mse_scl(const float *dvdb_restrict a, const float *dvdb_restrict b)
 {
     static constexpr float reciprocal = 1.f / INTERFACE_SIZE;
 
@@ -170,7 +170,7 @@ float cube_mse_scl(const float *restrict a, const float *restrict b)
     return mse * reciprocal;
 }
 
-float cube_mse_avx(const float *restrict a, const float *restrict b)
+float cube_mse_avx(const float *dvdb_restrict a, const float *dvdb_restrict b)
 {
     static constexpr float reciprocal = 1.f / INTERFACE_SIZE;
 
@@ -181,9 +181,9 @@ float cube_mse_avx(const float *restrict a, const float *restrict b)
     {
         __m256 ymm_a = _mm256_loadu_ps(a + i);
         __m256 ymm_b = _mm256_loadu_ps(b + i);
-        __m256 ymm_diff = ymm_a - ymm_b;
+        __m256 ymm_diff = _mm256_sub_ps(ymm_a, ymm_b);
 
-        ymm_mse += ymm_diff * ymm_diff;
+        ymm_mse = _mm256_add_ps(ymm_mse, _mm256_mul_ps(ymm_diff, ymm_diff));
     }
 
     ymm_mse = _mm256_hadd_ps(ymm_mse, ymm_mse);
@@ -246,7 +246,7 @@ void sin_avx(float *in, float *out)
 {
 }
 
-void compute_cube_dct_scl(float *restrict output, int x, int y, int z)
+void compute_cube_dct_scl(float *dvdb_restrict output, int x, int y, int z)
 {
     static constexpr float reciprocal = 2.f * std::numbers::pi_v<float> / 8;
 
@@ -270,7 +270,7 @@ void compute_cube_dct_scl(float *restrict output, int x, int y, int z)
     }
 }
 
-void compute_cube_dct_avx(float *restrict output, int x, int y, int z)
+void compute_cube_dct_avx(float *dvdb_restrict output, int x, int y, int z)
 {
     static constexpr float reciprocal = 2.f * std::numbers::pi_v<float> / 8;
 

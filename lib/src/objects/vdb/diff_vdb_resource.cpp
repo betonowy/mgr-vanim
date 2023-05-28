@@ -32,7 +32,7 @@ diff_vdb_resource::diff_vdb_resource(std::filesystem::path path)
     using regex_type = std::basic_regex<std::filesystem::path::value_type>;
 
 #if VANIM_WINDOWS
-    static constexpr auto regex_pattern = L"^.*[\\/\\\\].+_(\\d+)\\.nvdb$";
+    static constexpr auto regex_pattern = L"^.*[\\/\\\\].+_(\\d+)\\.dvdb$";
     using match_type = std::wcmatch;
 #else
     static constexpr auto regex_pattern = "^.*[\\/\\\\].+_(\\d+)\\.dvdb$";
@@ -80,7 +80,7 @@ void diff_vdb_resource::init(scene::object_context &ctx)
 {
     volume_resource_base::init(ctx);
 
-    set_frame_rate(10.f);
+    set_frame_rate(30.f);
 
     size_t max_buffer_size = 0;
 
@@ -185,13 +185,14 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
 
     std::swap(_created_state, _current_state);
 
-    _state_modification_mtx.lock();
+    std::atomic_bool resource_locked = false;
 
-    std::function task = [this, sptr = shared_from_this(), frame_number, block_number]() -> update_range {
+    std::function task = [this, sptr = shared_from_this(), frame_number, block_number, &resource_locked]() -> update_range {
         glm::uvec4 offsets(~0);
         size_t copy_size = 0;
 
-        utils::scope_guard on_scope_exit([this]() { _state_modification_mtx.unlock(); });
+        std::lock_guard lock(_state_modification_mtx);
+        resource_locked = true;
 
         auto map_t1 = std::chrono::steady_clock::now();
         mio::mmap_source dvdb_mmap(_dvdb_frames[frame_number].second.string());
@@ -267,5 +268,10 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
     };
 
     _ssbo_block_loaded[block_number] = ctx.generic_thread_pool().enqueue(std::move(task));
+
+    while (!resource_locked)
+    {
+        std::this_thread::yield();
+    }
 }
 } // namespace objects::vdb

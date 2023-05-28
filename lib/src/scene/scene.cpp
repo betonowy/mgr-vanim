@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <stdexcept>
 
 namespace scene
 {
@@ -94,6 +95,11 @@ bool scene::loop(float delta_time)
     for (const auto &object : _context._objects_to_delete)
     {
         object->on_destroy(_context);
+        
+        if (object.use_count() > 1)
+        {
+            throw std::runtime_error("Your lifetime handling sucks, bro.");
+        }
     }
 
     _context._objects_to_delete.clear();

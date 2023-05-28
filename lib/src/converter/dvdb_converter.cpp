@@ -351,13 +351,17 @@ int calculate_diff_avx2(const __m256 *src, const __m256 *dst, __m256 *diff)
 
     for (size_t i = 0; i < PNANOVDB_LEAF_TABLE_COUNT_AVX2; ++i)
     {
-        diff[i] = dst[i] - src[i];
+        diff[i] = _mm256_sub_ps(dst[i], src[i]);
 
         const auto cmp = _mm256_cmp_ps(diff[i], zeros, _CMP_EQ_UQ);
 
+        alignas(decltype(cmp)) float cmp_out[8];
+
+        _mm256_store_ps(cmp_out, cmp);
+
         for (int i = 0; i < 8; ++i)
         {
-            bits_set_count += cmp[i] != 0;
+            bits_set_count += cmp_out[i] != 0;
         }
     }
 

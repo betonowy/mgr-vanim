@@ -14,10 +14,10 @@ thread_pool::thread_pool(size_t count)
     for (size_t i = 0; i < count; ++i)
     {
         _workers.emplace_back([this]() {
-            task task;
-
             while (true)
             {
+                task task;
+
                 {
                     std::unique_lock lock(_queue_mtx);
 

@@ -101,5 +101,6 @@ void animation_controller::update(scene::object_context &ctx, float)
 void animation_controller::on_destroy(scene::object_context &)
 {
     _volume_resource->destroy();
+    _volume_resource.reset();
 }
 } // namespace objects::ui

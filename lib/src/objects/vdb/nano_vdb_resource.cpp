@@ -162,9 +162,16 @@ void nano_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
     _ssbo_block_frame[block_number] = frame_number;
     _ssbo_timestamp[block_number] = std::chrono::steady_clock::now();
 
-    std::function task = [this, sptr = shared_from_this(), block_number, frame_number]() -> update_range {
+    std::function task = [this, wptr = weak_from_this(), block_number, frame_number]() -> update_range {
         glm::uvec4 offsets(~0);
         size_t copy_size = 0;
+
+        auto sptr_lock = wptr.lock();
+
+        if (!sptr_lock)
+        {
+            return {};
+        }
 
         auto map_t1 = std::chrono::steady_clock::now();
         utils::nvdb_mmap nvdb_file(_nvdb_frames[frame_number].second.string());
