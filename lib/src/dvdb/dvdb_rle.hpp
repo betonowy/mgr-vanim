@@ -6,7 +6,7 @@
 
 namespace dvdb
 {
-struct rle_diff_desc
+struct diff_desc
 {
     uint32_t src_leaf, dst_leaf;
     float min, max;

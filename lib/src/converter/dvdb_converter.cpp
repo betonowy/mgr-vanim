@@ -117,7 +117,7 @@ std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_
 
     for (uint32_t i = 0; i < dst_leaf_count; ++i)
     {
-        dvdb::rle_diff_desc desc = {
+        dvdb::diff_desc desc = {
             .src_leaf = 0,
             .dst_leaf = i,
             .min = 0,

@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include "dct_transform_tables.hpp"
 #include "dvdb_benchmark_cases.hpp"
 
 #include <chrono>
@@ -238,69 +239,28 @@ TEST_CASE("artificial_mse_speed")
     BUDGET_BENCHMARK(cases::cube_mse_avx, dst_cube.values, src_cubes[0].values);
 }
 
-TEST_CASE("artificial_sin_speed")
+class dct_initialized
 {
-    float values[4096];
-    float reference[4096];
-    static constexpr float multiplier = 0.001224252;
-
-    cases::prepare_trig_lut();
-
-    for (int i = 0; i < 4096; ++i)
+public:
+    dct_initialized()
     {
-        float v = i * multiplier;
-
-        values[i] = v;
-        reference[i] = std::sin(v);
+        dvdb::dct_transform_tables_init();
     }
+};
 
-    for (int i = 0; i < 4096; ++i)
-    {
-        float v = i * multiplier;
-
-        float a = reference[i];
-        float b = cases::sin_scl(v);
-
-        REQUIRE_THAT(a, Catch::Matchers::WithinAbsMatcher(b, 1e-4));
-    }
-
-    // for (int i = 0; i < 4096; i += 8)
-    // {
-    //     float out[8];
-
-    //     cases::sin_avx_t7(values + i, out);
-
-    //     for (int j = 0; j < 8; ++j)
-    //     {
-    //         REQUIRE_THAT(reference[i + j], Catch::Matchers::WithinAbsMatcher(out[j], 1e-3));
-    //     }
-    // }
-
-    // for (int i = 0; i < 4096; i += 8)
-    // {
-    //     float out[8];
-
-    //     cases::sin_avx_t11(values + i, out);
-
-    //     for (int j = 0; j < 8; ++j)
-    //     {
-    //         REQUIRE_THAT(reference[i + j], Catch::Matchers::WithinAbsMatcher(out[j], 1e-3));
-    //     }
-    // }
-}
-
-TEST_CASE("artificial_dct_speed")
+TEST_CASE_METHOD(dct_initialized, "dct_encode_decode")
 {
-    cube8f32 out_scl, out_avx;
+    dvdb::cube_888_f32 src{}, dct{}, res{};
 
-    cases::compute_cube_dct_scl(out_scl.values, 1, 2, 3);
-    cases::compute_cube_dct_avx(out_avx.values, 1, 2, 3);
-
-    for (int i = 0; i < cases::INTERFACE_SIZE; ++i)
+    for (int i = 0; i < std::size(src.values); ++i)
     {
-        // REQUIRE_THAT(out_scl.values[i], Catch::Matchers::WithinAbsMatcher(out_avx.values[i], 1e-3));
+        int x = (i & 0b000000111) >> 0;
+        int y = (i & 0b000111000) >> 3;
+        int z = (i & 0b111000000) >> 6;
+
+        src.values[i] = rand() / static_cast<float>(RAND_MAX);
     }
 
-    // BUDGET_BENCHMARK(cases::compute_cube_dct_scl, out_scl.values, 1, 2, 3);
-    // BUDGET_BENCHMARK(cases::compute_cube_dct_avx, out_avx.values, 1, 2, 3);
+    BUDGET_BENCHMARK(dvdb::dct_transform_encode, &src, &dct);
+    BUDGET_BENCHMARK(dvdb::dct_transform_decode, &dct, &res);
 }

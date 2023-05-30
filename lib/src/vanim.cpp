@@ -12,6 +12,8 @@
 #include <exception>
 #include <thread>
 
+#include "dvdb/coord_transform.hpp"
+#include "dvdb/dct_transform_tables.hpp"
 #include "gl/message_callback.hpp"
 #include "objects/misc/world_data.hpp"
 #include "objects/ui/debug_window.hpp"
@@ -96,7 +98,20 @@ void run()
         // return;
     }
 
-    openvdb::initialize();
+    {
+        dvdb::dct_transform_tables_init();
+        std::cout << "DCT tables initialized.\n";
+    }
+
+    {
+        dvdb::coord_transform_init();
+        std::cout << "Coord transform tables initialized.";
+    }
+
+    {
+        openvdb::initialize();
+        std::cout << "OpenVDB initialized.\n";
+    }
 
     SDL_Init(SDL_INIT_EVERYTHING);
 

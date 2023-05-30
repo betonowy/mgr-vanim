@@ -39,8 +39,22 @@ endif()
 
 file(GLOB_RECURSE DVDB_SRC src/dvdb/*.cpp)
 
-add_executable(dvdb_benchmarks test/dvdb_benchmarks.cpp test/dvdb_benchmark_cases.cpp ${DVDB_SRC})
-target_include_directories(dvdb_benchmarks PRIVATE src/dvdb)
-target_link_libraries(dvdb_benchmarks PRIVATE Catch2::Catch2WithMain glm::glm)
+vanim_add_benchmark(
+    NAME dvdb_benchmarks
+    SOURCES test/dvdb_benchmark_cases.cpp ${DVDB_SRC}
+    INCLUDES src/dvdb
+    LIBS glm::glm
+)
 
-add_test(NAME dvdb_benchmarks COMMAND dvdb_benchmarks)
+vanim_add_test(
+    NAME dvdb_coord_transform
+    SOURCES ${DVDB_SRC}
+    INCLUDES src/dvdb
+)
+
+vanim_add_test(
+    NAME dvdb_dct_transform_tables
+    SOURCES ${DVDB_SRC}
+    INCLUDES src/dvdb src/utils
+    LIBS mio::mio
+)
