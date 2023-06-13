@@ -1,6 +1,7 @@
 #include "memory_counter.hpp"
 
 #include <mutex>
+#include <algorithm>
 
 namespace
 {

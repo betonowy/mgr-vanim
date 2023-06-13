@@ -29,3 +29,13 @@ add_library(imgui
 target_include_directories(imgui PUBLIC imgui/)
 
 target_link_libraries(imgui PRIVATE SDL2::SDL2-static)
+
+add_subdirectory(catch2)
+
+get_target_property(TARGET_TYPE lz4::lz4 TYPE)
+
+if (TARGET_TYPE STREQUAL STATIC_LIBRARY)
+    target_compile_definitions(lz4::lz4 INTERFACE LZ4_HC_STATIC_LINKING_ONLY)
+endif()
+
+target_compile_definitions(nanovdb INTERFACE PNANOVDB_C)

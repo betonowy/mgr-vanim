@@ -12,8 +12,8 @@
 #include <exception>
 #include <thread>
 
-#include "dvdb/coord_transform.hpp"
-#include "dvdb/dct_transform_tables.hpp"
+#include "dvdb/transform.hpp"
+#include "dvdb/dct.hpp"
 #include "gl/message_callback.hpp"
 #include "objects/misc/world_data.hpp"
 #include "objects/ui/debug_window.hpp"
@@ -43,75 +43,22 @@ void run()
     {
         const auto arch = utils::get_cpu_available_feature_level();
         std::cout << "Detected available CPU feature level: " << utils::cpu_available_feature_level_str(arch) << '\n';
+
+        if (arch != utils::cpu_available_feature_level_e::AVX2)
+        {
+            std::cerr << "This program makes use of AVX2 instruction set. This processor doesn't support this instruction set. Sorry.\n";
+            std::abort();
+        }
     }
 
-    {
-        // std::filesystem::path src = "/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_0.nvdb";
-        // std::filesystem::path dst = "/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_1.nvdb";
-        // // std::filesystem::path dst = "/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_2.nvdb";
-        // // std::filesystem::path dst = "/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_3.nvdb";
-        // // std::filesystem::path dst = "/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_4.nvdb";
+    dvdb::dct_init();
+    std::cout << "DCT tables initialized.\n";
 
-        // converter::dvdb_converter dvdb;
+    dvdb::transform_init();
+    std::cout << "Coord transform tables initialized.";
 
-        // {
-        //     auto t1 = std::chrono::steady_clock::now();
-        //     dvdb.create_keyframe("/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_0.nvdb");
-        //     auto t2 = std::chrono::steady_clock::now();
-        //     auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-
-        //     std::cout << "Keyframe: " << dur * 1e-3 << " ms\n";
-        // }
-        // {
-        //     auto t1 = std::chrono::steady_clock::now();
-        //     dvdb.create_keyframe("/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_1.nvdb");
-        //     auto t2 = std::chrono::steady_clock::now();
-        //     auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-
-        //     std::cout << "Diff: " << dur * 1e-3 << " ms\n";
-        // }
-        // {
-        //     auto t1 = std::chrono::steady_clock::now();
-        //     dvdb.add_diff_frame("/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_2.nvdb");
-        //     auto t2 = std::chrono::steady_clock::now();
-        //     auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-
-        //     std::cout << "Diff: " << dur * 1e-3 << " ms\n";
-        // }
-        // {
-        //     auto t1 = std::chrono::steady_clock::now();
-        //     dvdb.create_keyframe("/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_3.nvdb");
-        //     auto t2 = std::chrono::steady_clock::now();
-        //     auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-
-        //     std::cout << "Keyframe: " << dur * 1e-3 << " ms\n";
-        // }
-        // {
-        //     auto t1 = std::chrono::steady_clock::now();
-        //     dvdb.add_diff_frame("/home/araara/Documents/vdb-animations/Fire_01_nvdb_f32/embergen_fire_a_4.nvdb");
-        //     auto t2 = std::chrono::steady_clock::now();
-        //     auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-
-        //     std::cout << "Diff: " << dur * 1e-3 << " ms\n";
-        // }
-        // // converter::create_nvdb_diff(std::move(src), std::move(dst));
-        // return;
-    }
-
-    {
-        dvdb::dct_transform_tables_init();
-        std::cout << "DCT tables initialized.\n";
-    }
-
-    {
-        dvdb::coord_transform_init();
-        std::cout << "Coord transform tables initialized.";
-    }
-
-    {
-        openvdb::initialize();
-        std::cout << "OpenVDB initialized.\n";
-    }
+    openvdb::initialize();
+    std::cout << "OpenVDB initialized.\n";
 
     SDL_Init(SDL_INIT_EVERYTHING);
 

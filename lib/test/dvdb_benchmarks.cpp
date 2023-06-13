@@ -1,8 +1,14 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
-#include "dct_transform_tables.hpp"
-#include "dvdb_benchmark_cases.hpp"
+#include "compression.hpp"
+#include "dct.hpp"
+#include "derivative.hpp"
+#include "fma.hpp"
+#include "statistics.hpp"
+#include "rotate.hpp"
+
+#include <scope_guard.hpp>
 
 #include <chrono>
 #include <cstring>
@@ -43,224 +49,110 @@ float budget_benchmark(const char *description, F f)
     return count;
 }
 
+#define BUDGET_BENCHMARK_CASE(func, note, ...) budget_benchmark(#func "" note, [&]() { \
+    func(__VA_ARGS__);                                                                 \
+})
+
 #define BUDGET_BENCHMARK(func, ...) budget_benchmark(#func, [&]() { \
     func(__VA_ARGS__);                                              \
 })
 } // namespace
 
-TEST_CASE("artificial_mul_copy_speed")
+// TEST_CASE("compression_64KiB_speed")
+// {
+//     static constexpr int input_length = 64 * 1024;
+
+//     char *input = static_cast<char *>(std::malloc(input_length));
+//     char *output = static_cast<char *>(std::malloc(input_length));
+
+//     utils::scope_guard defer([&] { std::free(input), std::free(output); });
+
+//     for (int i = 0; i < input_length; ++i)
+//     {
+//         input[i] = rand() % 0x1f;
+//     }
+
+//     int output_length;
+
+//     output_length = dvdb::compress_stream(input, input_length, output, input_length);
+
+//     BUDGET_BENCHMARK(dvdb::compress_stream, input, input_length, output, input_length);
+//     BUDGET_BENCHMARK(dvdb::decompress_stream, output, output_length, input, input_length);
+// }
+
+// TEST_CASE("derivative_speed")
+// {
+//     dvdb::cube_888_f32 src_f32{}, dst_f32{};
+//     dvdb::cube_888_i8 dst_i8;
+//     float min, max;
+
+//     BUDGET_BENCHMARK(dvdb::encode_derivative, &src_f32, &dst_f32);
+//     BUDGET_BENCHMARK(dvdb::decode_derivative, &src_f32, &dst_f32);
+
+//     BUDGET_BENCHMARK(dvdb::encode_derivative_to_i8, &src_f32, &dst_i8, &min, &max, 0x7f);
+//     BUDGET_BENCHMARK(dvdb::decode_derivative_from_i8, &dst_i8, &dst_f32, min, max, 0x7f);
+// }
+
+// TEST_CASE("mean_squared_error_speed")
+// {
+//     dvdb::cube_888_f32 a, b, mask;
+
+//     dvdb::mean_squared_error(&a, &b);
+
+//     BUDGET_BENCHMARK(dvdb::mean_squared_error, &a, &b);
+//     BUDGET_BENCHMARK(dvdb::mean_squared_error_with_mask, &a, &b, &mask);
+// }
+
+// TEST_CASE("rotate_refill_speed")
+// {
+//     dvdb::cube_888_f32 cubes[27], dst;
+
+//     BUDGET_BENCHMARK_CASE(dvdb::rotate_refill, "{ 5,  6,  7}", &dst, cubes, 5, 6, 7);
+//     BUDGET_BENCHMARK_CASE(dvdb::rotate_refill, "{-3, -1, -2}", &dst, cubes, -3, -1, -2);
+//     BUDGET_BENCHMARK_CASE(dvdb::rotate_refill, "{ 5,  6,  0}", &dst, cubes, 5, 6, 0);
+//     BUDGET_BENCHMARK_CASE(dvdb::rotate_refill, "{-3, -1,  0}", &dst, cubes, -3, -1, 0);
+//     BUDGET_BENCHMARK_CASE(dvdb::rotate_refill, "{ 5,  0,  0}", &dst, cubes, 5, 0, 0);
+//     BUDGET_BENCHMARK_CASE(dvdb::rotate_refill, "{-3,  0,  0}", &dst, cubes, -3, 0, 0);
+//     BUDGET_BENCHMARK_CASE(dvdb::rotate_refill, "{ 0,  0,  0}", &dst, cubes, 0, 0, 0);
+// }
+
+TEST_CASE("fused_multiply_add_speed")
 {
-    static constexpr auto input_value = 1.f;
-    static constexpr auto work_value = 2.f;
-    static constexpr auto expected_value = input_value * work_value;
-
-    alignas(alignof(__m256)) float input[cases::INTERFACE_SIZE] = {};
-    alignas(alignof(__m256)) float output[cases::INTERFACE_SIZE] = {};
-    alignas(alignof(__m256)) float work_group[cases::INTERFACE_SIZE] = {};
-
-    for (int i = 0; i < cases::INTERFACE_SIZE; ++i)
-    {
-        input[i] = input_value;
-        work_group[i] = work_value;
-    }
-
-    BUDGET_BENCHMARK(cases::copy_for_loop_scl, input, output, work_group);
-    BUDGET_BENCHMARK(cases::copy_for_loop_avx, input, output, work_group);
-}
-
-TEST_CASE("artificial_shift_speed")
-{
-    float input[cases::INTERFACE_SIZE] = {};
-    float output_scl[cases::INTERFACE_SIZE] = {};
-    float output_avx[cases::INTERFACE_SIZE] = {};
-
-    for (int i = 0; i < cases::INTERFACE_SIZE; ++i)
-    {
-        input[i] = i;
-    }
-
-    BUDGET_BENCHMARK(cases::cube_value_offset_scl, input, output_scl, 5, 3, 6);
-    BUDGET_BENCHMARK(cases::cube_value_offset_avx, input, output_avx, 5, 3, 6);
-
-    REQUIRE(std::memcmp(output_scl, output_avx, sizeof(output_scl)) == 0);
-
-    for (int z = 0; z < 8; ++z)
-    {
-        for (int y = 0; y < 8; ++y)
-        {
-            for (int x = 0; x < 8; ++x)
-            {
-                cases::cube_value_offset_scl(input, output_scl, x, y, z);
-                cases::cube_value_offset_avx(input, output_avx, x, y, z);
-
-                if (std::memcmp(output_scl, output_avx, sizeof(output_scl)) != 0)
-                {
-                    FAIL("Incorrect results for " + ("x == " + std::to_string(x) + ", y == " + std::to_string(y) + ", z == " + std::to_string(z)));
-                }
-            }
-        }
-    }
-}
-
-glm::vec3 random_vector(float a, float b)
-{
-    auto get = [a, b]() {
-        return rand() / static_cast<float>(RAND_MAX) * (b - a) + a;
-    };
-
-    return {get(), get(), get()};
-}
-
-float value_generator(glm::vec3 c)
-{
-    c *= 0.5f;
-
-    float v = 0.0f;
-
-    v += glm::sin(glm::cos(c.x + 1.34f) * 3.f + c.z * 21.f) + 1.f;
-    v *= (glm::cos(glm::sin(c.y - 2.2f + c.z * 43.f) * 3.f + v) + 2.f) / 5.f;
-    v *= glm::sin(-glm::cos(c.z * 100.f + 3.3f + c.x * 0.2f - c.y * c.y) * 0.2f) + 1.f;
-
-    return v;
-}
-
-struct cube8f32
-{
-    float values[cases::INTERFACE_SIZE];
-};
-
-struct cube8i8
-{
-    int8_t values[cases::INTERFACE_SIZE];
-};
-
-void populate_cube(cube8f32 &cube, glm::vec3 offset)
-{
-    for (int i = 0; i < cases::INTERFACE_SIZE; ++i)
-    {
-        int x = (i >> 0) & 7;
-        int y = (i >> 3) & 7;
-        int z = (i >> 6) & 7;
-
-        cube.values[i] = value_generator(offset + glm::vec3(x, y, z));
-    }
-}
-
-void populate_cube(cube8i8 &cube, glm::vec3 offset)
-{
-    for (int i = 0; i < cases::INTERFACE_SIZE; ++i)
-    {
-        int x = (i >> 0) & 7;
-        int y = (i >> 3) & 7;
-        int z = (i >> 6) & 7;
-
-        cube.values[i] = static_cast<int8_t>(value_generator(offset + glm::vec3(x, y, z)) * 127 - 127);
-    }
-}
-
-TEST_CASE("artificial_diff_speed")
-{
-    static constexpr auto N_SRC_CUBES = 10;
-
-    cube8f32 src_cubes[N_SRC_CUBES];
-    glm::vec3 src_positions[N_SRC_CUBES];
-    cube8f32 dst_cube;
-
-    cube8f32 out_cube_scl;
-    cube8f32 out_cube_avx;
-
-    for (int i = 0; i < N_SRC_CUBES; ++i)
-    {
-        src_positions[i] = random_vector(-3, 3);
-        populate_cube(src_cubes[i], src_positions[i]);
-    }
-
-    populate_cube(dst_cube, {});
-
-    cases::cube_diff_scl(dst_cube.values, src_cubes[0].values, out_cube_scl.values);
-    cases::cube_diff_avx(dst_cube.values, src_cubes[0].values, out_cube_avx.values);
-
-    REQUIRE(std::memcmp(out_cube_scl.values, out_cube_avx.values, sizeof(out_cube_scl)) == 0);
-
-    BUDGET_BENCHMARK(cases::cube_diff_scl, dst_cube.values, src_cubes[0].values, out_cube_scl.values);
-    BUDGET_BENCHMARK(cases::cube_diff_avx, dst_cube.values, src_cubes[0].values, out_cube_scl.values);
-}
-
-TEST_CASE("artificial_diff_speed_epi8")
-{
-    static constexpr auto N_SRC_CUBES = 10;
-
-    cube8i8 src_cubes[N_SRC_CUBES];
-    glm::vec3 src_positions[N_SRC_CUBES];
-    cube8i8 dst_cube;
-
-    cube8i8 out_cube_scl;
-    cube8i8 out_cube_avx;
-
-    for (int i = 0; i < N_SRC_CUBES; ++i)
-    {
-        src_positions[i] = random_vector(-3, 3);
-        populate_cube(src_cubes[i], src_positions[i]);
-    }
-
-    populate_cube(dst_cube, {});
-
-    cases::cube_diff_epi8_scl(dst_cube.values, src_cubes[0].values, out_cube_scl.values);
-    cases::cube_diff_epi8_avx(dst_cube.values, src_cubes[0].values, out_cube_avx.values);
-
-    REQUIRE(std::memcmp(out_cube_scl.values, out_cube_avx.values, sizeof(out_cube_scl)) == 0);
-
-    BUDGET_BENCHMARK(cases::cube_diff_epi8_scl, dst_cube.values, src_cubes[0].values, out_cube_scl.values);
-    BUDGET_BENCHMARK(cases::cube_diff_epi8_avx, dst_cube.values, src_cubes[0].values, out_cube_scl.values);
-}
-
-TEST_CASE("artificial_mse_speed")
-{
-    static constexpr auto N_SRC_CUBES = 10;
-
-    cube8f32 src_cubes[N_SRC_CUBES];
-    glm::vec3 src_positions[N_SRC_CUBES];
-    cube8f32 dst_cube;
-
-    for (int i = 0; i < N_SRC_CUBES; ++i)
-    {
-        src_positions[i] = random_vector(-3, 3);
-        populate_cube(src_cubes[i], src_positions[i]);
-    }
-
-    populate_cube(dst_cube, {});
-
-    float out_scl = cases::cube_mse_scl(dst_cube.values, src_cubes[0].values);
-    float out_avx = cases::cube_mse_avx(dst_cube.values, src_cubes[0].values);
-
-    REQUIRE_THAT(out_scl, Catch::Matchers::WithinRelMatcher(out_avx, 1e-6));
-
-    BUDGET_BENCHMARK(cases::cube_mse_scl, dst_cube.values, src_cubes[0].values);
-    BUDGET_BENCHMARK(cases::cube_mse_avx, dst_cube.values, src_cubes[0].values);
-}
-
-class dct_initialized
-{
-public:
-    dct_initialized()
-    {
-        dvdb::dct_transform_tables_init();
-    }
-};
-
-TEST_CASE_METHOD(dct_initialized, "dct_encode_decode")
-{
-    dvdb::cube_888_f32 src{}, dct{}, res{};
+    dvdb::cube_888_f32 src{}, dst{}, src_bis{};
+    float add, mul;
 
     for (int i = 0; i < std::size(src.values); ++i)
     {
-        int x = (i & 0b000000111) >> 0;
-        int y = (i & 0b000111000) >> 3;
-        int z = (i & 0b111000000) >> 6;
-
         src.values[i] = rand() / static_cast<float>(RAND_MAX);
+        dst.values[i] = rand() / static_cast<float>(RAND_MAX);
     }
 
-    BUDGET_BENCHMARK(dvdb::dct_transform_encode, &src, &dct);
-    BUDGET_BENCHMARK(dvdb::dct_transform_decode, &dct, &res);
+    BUDGET_BENCHMARK(dvdb::find_fused_multiply_add, &src, &dst, &add, &mul);
+    BUDGET_BENCHMARK(dvdb::fused_multiply_add, &src, &src_bis, add, mul);
 }
+
+class dvdb_ready
+{
+public:
+    dvdb_ready()
+    {
+        dvdb::dct_init();
+    }
+};
+
+// TEST_CASE_METHOD(dvdb_ready, "dct_speed")
+// {
+//     dvdb::cube_888_f32 src{}, dct{}, res{};
+
+//     for (int i = 0; i < std::size(src.values); ++i)
+//     {
+//         int x = (i & 0b000000111) >> 0;
+//         int y = (i & 0b000111000) >> 3;
+//         int z = (i & 0b111000000) >> 6;
+
+//         src.values[i] = rand() / static_cast<float>(RAND_MAX);
+//     }
+
+//     BUDGET_BENCHMARK(dvdb::dct_3d_encode, &src, &dct);
+//     BUDGET_BENCHMARK(dvdb::dct_3d_decode, &dct, &res);
+// }

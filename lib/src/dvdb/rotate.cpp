@@ -1,0 +1,213 @@
+#include "rotate.hpp"
+
+#include "fma.hpp"
+#include "statistics.hpp"
+
+#include <cstring>
+#include <immintrin.h>
+
+namespace dvdb
+{
+namespace
+{
+constexpr auto INDEX_CENTER = 13;
+
+void rotate_internal(const cube_888_f32 *src, cube_888_f32 *dst, int ox, int oy, int oz)
+{
+    ox = -ox & 0b111;
+    oy &= 0b111;
+    oz &= 0b111;
+
+    alignas(__m256i) static constexpr uint32_t x_indices[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+
+    __m256i permutation;
+    __m128 half_mask;
+
+    {
+        __m256i x_off = _mm256_set1_epi32(ox);
+        __m256i x_idx = _mm256_load_si256(reinterpret_cast<const __m256i *>(x_indices));
+
+        permutation = _mm256_add_epi32(x_idx, x_off);
+
+        __m256i b2 = _mm256_set1_epi32(0b11);
+        __m256i t1 = _mm256_castps_si256(_mm256_and_ps(_mm256_castsi256_ps(permutation), _mm256_castsi256_ps(b2)));
+
+        __m256i mask;
+
+        if (ox <= 4 && ox != 0)
+        {
+            mask = _mm256_castps_si256(_mm256_cmp_ps(_mm256_castsi256_ps(x_idx), _mm256_castsi256_ps(t1), _CMP_GE_OQ));
+        }
+        else
+        {
+            mask = _mm256_castps_si256(_mm256_cmp_ps(_mm256_castsi256_ps(x_idx), _mm256_castsi256_ps(t1), _CMP_LT_OQ));
+        }
+
+        half_mask = _mm_castsi128_ps(_mm256_castsi256_si128(mask));
+    }
+
+#pragma GCC unroll 8
+    for (int z = 0; z < 8; ++z)
+    {
+#pragma GCC unroll 8
+        for (int y = 0; y < 8; ++y)
+        {
+            int index_in = y * 8 + z * 8 * 8;
+            int index_out = ((y + oy) & 0b111) * 8 + ((z + oz) & 0b111) * 8 * 8;
+
+            __m256 row = _mm256_loadu_ps(src->values + index_in);
+            __m256 half_rotated = _mm256_permutevar_ps(row, permutation);
+
+            __m128 half_rotated_low = _mm256_extractf128_ps(half_rotated, 0);
+            __m128 half_rotated_high = _mm256_extractf128_ps(half_rotated, 1);
+
+            __m128 rotated_low = _mm_blendv_ps(half_rotated_low, half_rotated_high, half_mask);
+            __m128 rotated_high = _mm_blendv_ps(half_rotated_high, half_rotated_low, half_mask);
+
+            __m256 out = _mm256_set_m128(rotated_high, rotated_low);
+
+            _mm256_storeu_ps(dst->values + index_out, out);
+        }
+    }
+}
+} // namespace
+
+float rotate_refill_find(const cube_888_f32 *dst, const cube_888_f32 src[27], int *x, int *y, int *z)
+{
+    float best = std::numeric_limits<float>::max();
+    cube_888_f32 test;
+
+    *x = *y = *z = 0;
+
+    for (int tz = -8; tz <= 8; ++tz)
+    {
+        for (int ty = -8; ty <= 8; ++ty)
+        {
+            for (int tx = -8; tx <= 8; ++tx)
+            {
+                rotate_refill(&test, src, tx, ty, tz);
+
+                float pre_fma_error = mean_squared_error(&test, dst);
+
+                float add, mul;
+                find_fused_multiply_add(&test, dst, &add, &mul);
+                fused_multiply_add(&test, &test, add, mul);
+
+                float post_fma_error = mean_squared_error(&test, dst);
+
+                float error = std::min(pre_fma_error, post_fma_error);
+
+                if (error < best)
+                {
+                    *x = tx, *y = ty, *z = tz, best = error;
+                }
+            }
+        }
+    }
+
+    return best;
+}
+
+static constexpr int coords_to_cube_index(int x, int y, int z)
+{
+    return x + (y << 3) + (z << 6);
+}
+
+static constexpr int coords_to_neighbor_index(int x, int y, int z)
+{
+    return (x + 1) + (y + 1) * 3 + (z + 1) * 3 * 3;
+}
+
+static constexpr void limit_coord_active(int v, int &sb, int &se, int &db, int &de)
+{
+    bool cond = v > 0;
+
+    sb = cond ? 8 - v : 0;
+    se = cond ? 8 : -v;
+    db = cond ? 0 : 8 + v;
+    de = cond ? v : 8;
+}
+
+static constexpr void limit_coord_passive(int v, int &sb, int &se, int &db, int &de)
+{
+    bool cond = v > 0;
+
+    sb = cond ? 0 : -v;
+    se = cond ? 8 - v : 8;
+    db = cond ? v : 0;
+    de = cond ? 8 : 8 + v;
+}
+
+template <int AX, int AY, int AZ>
+void range_copy(cube_888_f32 *dst, const cube_888_f32 *src, int x, int y, int z)
+{
+    int sbx, sex, dbx, dex, sby, sey, dby, dey, sbz, sez, dbz, dez;
+
+    AX ? limit_coord_active(x, sbx, sex, dbx, dex) : limit_coord_passive(x, sbx, sex, dbx, dex);
+    AY ? limit_coord_active(y, sby, sey, dby, dey) : limit_coord_passive(y, sby, sey, dby, dey);
+    AZ ? limit_coord_active(z, sbz, sez, dbz, dez) : limit_coord_passive(z, sbz, sez, dbz, dez);
+
+    for (int sz = sbz, dz = dbz; sz < sez; ++sz, ++dz)
+    {
+        for (int sy = sby, dy = dby; sy < sey; ++sy, ++dy)
+        {
+            for (int sx = sbx, dx = dbx; sx < sex; ++sx, ++dx)
+            {
+                dst->values[coords_to_cube_index(dx, dy, dz)] = src->values[coords_to_cube_index(sx, sy, sz)];
+            }
+        }
+    }
+}
+
+void rotate_refill(cube_888_f32 *dst, const cube_888_f32 src[27], int x, int y, int z)
+{
+    auto dir_of = [](int v) { return v < 0 ? 1 : (v > 0 ? -1 : 0); };
+
+    int dir_x = dir_of(x);
+    int dir_y = dir_of(y);
+    int dir_z = dir_of(z);
+
+    if (x == 0 && y == 0 && z == 0)
+    {
+        *dst = src[coords_to_neighbor_index(0, 0, 0)];
+        return;
+    }
+
+    rotate_internal(src + coords_to_neighbor_index(0, 0, 0), dst, x, y, z);
+
+    if (x != 0)
+    {
+        range_copy<1, 0, 0>(dst, src + coords_to_neighbor_index(dir_x, 0, 0), x, y, z);
+    }
+
+    if (y != 0)
+    {
+        range_copy<0, 1, 0>(dst, src + coords_to_neighbor_index(0, dir_y, 0), x, y, z);
+    }
+
+    if (z != 0)
+    {
+        range_copy<0, 0, 1>(dst, src + coords_to_neighbor_index(0, 0, dir_z), x, y, z);
+    }
+
+    if (x != 0 && y != 0)
+    {
+        range_copy<1, 1, 0>(dst, src + coords_to_neighbor_index(dir_x, dir_y, 0), x, y, z);
+    }
+
+    if (y != 0 && z != 0)
+    {
+        range_copy<0, 1, 1>(dst, src + coords_to_neighbor_index(0, dir_y, dir_z), x, y, z);
+    }
+
+    if (x != 0 && z != 0)
+    {
+        range_copy<1, 0, 1>(dst, src + coords_to_neighbor_index(dir_x, 0, dir_z), x, y, z);
+    }
+
+    if (x != 0 && y != 0 && z != 0)
+    {
+        range_copy<1, 1, 1>(dst, src + coords_to_neighbor_index(dir_x, dir_y, dir_z), x, y, z);
+    }
+}
+} // namespace dvdb

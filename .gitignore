@@ -6,3 +6,6 @@ package/
 
 # pnanovdb.glsl is copied from openvdb dependencies
 res/glsl/pnanovdb.glsl
+
+# nanovdb files
+*.nvdb

@@ -3,7 +3,6 @@
     "name": "vanim",
     "version": "0.1.0",
     "dependencies": [
-        "catch2",
         "sdl2",
         "glm",
         "gl3w",

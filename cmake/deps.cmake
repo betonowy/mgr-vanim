@@ -1,5 +1,4 @@
 find_package(SDL2 CONFIG REQUIRED)
-find_package(Catch2 CONFIG REQUIRED)
 find_package(gl3w CONFIG REQUIRED)
 find_package(zstd CONFIG REQUIRED)
 find_package(lz4 CONFIG REQUIRED)

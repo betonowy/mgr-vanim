@@ -10,6 +10,7 @@ target_link_libraries(vanim
         openvdb_static
         nanovdb
         imgui
+        lz4::lz4
 )
 
 target_include_directories(vanim
@@ -37,24 +38,87 @@ else()
     )
 endif()
 
-file(GLOB_RECURSE DVDB_SRC src/dvdb/*.cpp)
-
 vanim_add_benchmark(
     NAME dvdb_benchmarks
-    SOURCES test/dvdb_benchmark_cases.cpp ${DVDB_SRC}
-    INCLUDES src/dvdb
-    LIBS glm::glm
-)
-
-vanim_add_test(
-    NAME dvdb_coord_transform
-    SOURCES ${DVDB_SRC}
-    INCLUDES src/dvdb
-)
-
-vanim_add_test(
-    NAME dvdb_dct_transform_tables
-    SOURCES ${DVDB_SRC}
+    SOURCES 
+        test/dvdb_benchmark_cases.cpp
+        src/utils/resource_path.cpp
+        src/utils/nvdb_mmap.cpp
+        src/dvdb/dct.cpp
+        src/dvdb/statistics.cpp
+        src/dvdb/transform.cpp
+        src/dvdb/derivative.cpp
+        src/dvdb/rotate.cpp
+        src/dvdb/fma.cpp
+        src/dvdb/compression.cpp
+        src/dvdb/common.cpp
     INCLUDES src/dvdb src/utils
-    LIBS mio::mio
+    LIBS glm::glm nanovdb lz4::lz4
+)
+
+vanim_add_test(
+    NAME dvdb_transform
+    SOURCES src/dvdb/transform.cpp
+    INCLUDES src/dvdb
+)
+
+vanim_add_test(
+    NAME dvdb_dct
+    SOURCES
+        src/dvdb/dct.cpp
+        src/dvdb/statistics.cpp
+        src/dvdb/transform.cpp
+        src/dvdb/derivative.cpp
+        src/dvdb/common.cpp
+    INCLUDES src/dvdb src/utils
+    LIBS mio::mio glm::glm
+)
+
+vanim_add_test(
+    NAME dvdb_derivative
+    SOURCES src/dvdb/derivative.cpp
+    INCLUDES src/dvdb
+)
+
+vanim_add_test(
+    NAME dvdb_compression
+    SOURCES
+        src/utils/resource_path.cpp
+        src/utils/nvdb_mmap.cpp
+        src/dvdb/compression.cpp
+        src/dvdb/derivative.cpp
+        src/dvdb/dct.cpp
+        src/dvdb/statistics.cpp
+        src/dvdb/transform.cpp
+        src/dvdb/common.cpp
+    INCLUDES src/dvdb src/utils
+    LIBS lz4::lz4 nanovdb
+)
+
+vanim_add_test(
+    NAME dvdb_rotate
+    SOURCES 
+        src/utils/resource_path.cpp
+        src/utils/nvdb_mmap.cpp
+        src/dvdb/dct.cpp
+        src/dvdb/statistics.cpp
+        src/dvdb/transform.cpp
+        src/dvdb/derivative.cpp
+        src/dvdb/rotate.cpp
+        src/dvdb/fma.cpp
+        src/dvdb/common.cpp
+    INCLUDES src/dvdb src/utils
+    LIBS mio::mio nanovdb glm::glm
+)
+
+vanim_add_test(
+    NAME dvdb_fma
+    SOURCES src/dvdb/fma.cpp src/dvdb/statistics.cpp src/dvdb/common.cpp
+    INCLUDES src/dvdb
+)
+
+vanim_add_test(
+    NAME dvdb_statistics
+    SOURCES src/dvdb/statistics.cpp src/dvdb/common.cpp
+    INCLUDES src/dvdb
 )

@@ -187,9 +187,16 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
 
     std::atomic_bool resource_locked = false;
 
-    std::function task = [this, sptr = shared_from_this(), frame_number, block_number, &resource_locked]() -> update_range {
+    std::function task = [this, wptr = weak_from_this(), frame_number, block_number, &resource_locked]() -> update_range {
         glm::uvec4 offsets(~0);
         size_t copy_size = 0;
+
+        auto sptr = wptr.lock();
+
+        if (!sptr)
+        {
+            return {};
+        }
 
         std::lock_guard lock(_state_modification_mtx);
         resource_locked = true;

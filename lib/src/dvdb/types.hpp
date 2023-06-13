@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bitset>
 #include <cmath>
 #include <cstdint>
 
@@ -20,6 +21,24 @@ struct cube_888
 
 using cube_888_f32 = cube_888<float>;
 using cube_888_i8 = cube_888<int8_t>;
+
+struct cube_888_mask
+{
+    std::bitset<512> values;
+
+    template <typename T, auto A, auto I>
+    cube_888<T> as_values()
+    {
+        cube_888<T> out;
+
+        for (int i = 0; i < 512; ++i)
+        {
+            out.values[i] = values[i] ? A : I;
+        }
+
+        return out;
+    }
+};
 
 struct diff_desc
 {
