@@ -1,6 +1,6 @@
 #include "rotate.hpp"
 
-#include "fma.hpp"
+#include "common.hpp"
 #include "statistics.hpp"
 
 #include <cstring>
@@ -55,7 +55,7 @@ void rotate_internal(const cube_888_f32 *src, cube_888_f32 *dst, int ox, int oy,
             int index_in = y * 8 + z * 8 * 8;
             int index_out = ((y + oy) & 0b111) * 8 + ((z + oz) & 0b111) * 8 * 8;
 
-            __m256 row = _mm256_loadu_ps(src->values + index_in);
+            __m256 row = _mm256_load_ps(src->values + index_in);
             __m256 half_rotated = _mm256_permutevar_ps(row, permutation);
 
             __m128 half_rotated_low = _mm256_extractf128_ps(half_rotated, 0);
@@ -66,16 +66,114 @@ void rotate_internal(const cube_888_f32 *src, cube_888_f32 *dst, int ox, int oy,
 
             __m256 out = _mm256_set_m128(rotated_high, rotated_low);
 
-            _mm256_storeu_ps(dst->values + index_out, out);
+            _mm256_store_ps(dst->values + index_out, out);
         }
     }
 }
+
+constexpr int coords_to_cube_index(int x, int y, int z)
+{
+    return x + (y << 3) + (z << 6);
+}
+
+constexpr int coords_to_neighbor_index(int x, int y, int z)
+{
+    return (x + 1) + (y + 1) * 3 + (z + 1) * 3 * 3;
+}
+
+constexpr void limit_coord_active(int v, int &sb, int &se, int &db, int &de)
+{
+    bool cond = v > 0;
+
+    sb = cond ? 8 - v : 0;
+    se = cond ? 8 : -v;
+    db = cond ? 0 : 8 + v;
+    de = cond ? v : 8;
+}
+
+constexpr void limit_coord_passive(int v, int &sb, int &se, int &db, int &de)
+{
+    bool cond = v > 0;
+
+    sb = cond ? 0 : -v;
+    se = cond ? 8 - v : 8;
+    db = cond ? v : 0;
+    de = cond ? 8 : 8 + v;
+}
+
+constexpr void index_to_step_offset(int i, int *x, int *y, int *z)
+{
+    *x = (i / 1) % 3 - 1;
+    *y = (i / 3) % 3 - 1;
+    *z = (i / 9) % 3 - 1;
+}
+
+constexpr int min_value27(float values[27])
+{
+    int min_index = 0;
+    float min_value = values[0];
+
+    for (int i = 1; i < 27; ++i)
+    {
+        if (min_value > values[i])
+        {
+            min_value = values[i];
+            min_index = i;
+        }
+    }
+
+    return min_index;
+}
 } // namespace
 
-float rotate_refill_find(const cube_888_f32 *dst, const cube_888_f32 src[27], int *x, int *y, int *z)
+float rotate_refill_find_astar(const cube_888_f32 *dst, const cube_888_f32 src[27], int *x, int *y, int *z)
 {
-    float best = std::numeric_limits<float>::max();
     cube_888_f32 test;
+    float test_error[27];
+
+    *x = *y = *z = 0;
+
+    while (true)
+    {
+        int tx, ty, tz;
+
+        for (int i = 0; i < 27; ++i)
+        {
+            index_to_step_offset(i, &tx, &ty, &tz);
+            rotate_refill(&test, src, tx + *x, ty + *y, tz + *z);
+
+            float pre_fma_error = mean_squared_error(&test, dst);
+
+            float add, mul;
+            linear_regression(&test, dst, &add, &mul);
+            fma(&test, &test, add, mul);
+
+            float post_fma_error = mean_squared_error(&test, dst);
+
+            test_error[i] = std::min(pre_fma_error, post_fma_error);
+        }
+
+        int i = min_value27(test_error);
+        index_to_step_offset(i, &tx, &ty, &tz);
+
+        if (tx == 0 && ty == 0 && tz == 0)
+        {
+            return test_error[i];
+        }
+
+        *x += tx, *y += ty, *z += tz;
+
+        if (std::abs(*x) > 7 || std::abs(*y) > 7 || std::abs(*z) > 7)
+        {
+            return test_error[i];
+        }
+    }
+}
+
+float rotate_refill_find_brute_force(const cube_888_f32 *dst, const cube_888_f32 src[27], int *x, int *y, int *z)
+{
+    cube_888_f32 test;
+    float best = std::numeric_limits<float>::max();
 
     *x = *y = *z = 0;
 
@@ -90,8 +188,8 @@ float rotate_refill_find(const cube_888_f32 *dst, const cube_888_f32 src[27], in
                 float pre_fma_error = mean_squared_error(&test, dst);
 
                 float add, mul;
-                find_fused_multiply_add(&test, dst, &add, &mul);
-                fused_multiply_add(&test, &test, add, mul);
+                linear_regression(&test, dst, &add, &mul);
+                fma(&test, &test, add, mul);
 
                 float post_fma_error = mean_squared_error(&test, dst);
 
@@ -106,36 +204,6 @@ float rotate_refill_find(const cube_888_f32 *dst, const cube_888_f32 src[27], in
     }
 
     return best;
-}
-
-static constexpr int coords_to_cube_index(int x, int y, int z)
-{
-    return x + (y << 3) + (z << 6);
-}
-
-static constexpr int coords_to_neighbor_index(int x, int y, int z)
-{
-    return (x + 1) + (y + 1) * 3 + (z + 1) * 3 * 3;
-}
-
-static constexpr void limit_coord_active(int v, int &sb, int &se, int &db, int &de)
-{
-    bool cond = v > 0;
-
-    sb = cond ? 8 - v : 0;
-    se = cond ? 8 : -v;
-    db = cond ? 0 : 8 + v;
-    de = cond ? v : 8;
-}
-
-static constexpr void limit_coord_passive(int v, int &sb, int &se, int &db, int &de)
-{
-    bool cond = v > 0;
-
-    sb = cond ? 0 : -v;
-    se = cond ? 8 - v : 8;
-    db = cond ? v : 0;
-    de = cond ? 8 : 8 + v;
 }
 
 template <int AX, int AY, int AZ>

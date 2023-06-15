@@ -13,10 +13,19 @@
 
 namespace dvdb
 {
+static constexpr uint64_t MAGIC_NUMBER = 0x42445666666944; // DiffVDB
+static constexpr uint64_t MAX_SUPPORTED_GRID_COUNT = 4;
+
 template <typename T>
 struct cube_888
 {
-    T values[512];
+    alignas(32) T values[512];
+
+    bool is_avx_aligned() const
+    {
+        const auto uptr = reinterpret_cast<uintptr_t>(this);
+        return (uptr & ~static_cast<uintptr_t>(32 - 1)) == uptr;
+    }
 };
 
 using cube_888_f32 = cube_888<float>;
@@ -40,27 +49,54 @@ struct cube_888_mask
     }
 };
 
-struct diff_desc
+namespace headers
 {
-    uint32_t src_leaf, dst_leaf;
-    float min, max;
 
-    bool no_diff() const
+struct main
+{
+    enum class frame_type_e : uint64_t
     {
-        return std::isnan(min);
-    }
+        KEY_FRAME,
+        DIFF_FRAME,
+    };
 
-    void make_no_diff()
+    uint64_t magic;             // DiffVDB
+    frame_type_e frame_type;    // key and diff frames
+    uint64_t vdb_grid_count;    // how many grids in this file
+    uint64_t vdb_required_size; // how much data to allocate for final vsb
+
+    struct
     {
-        min = max = NAN;
-    }
+        uint64_t base_tree_offset_start; // offset in this file
+        uint64_t base_tree_copy_size;    // data to copy
+        uint64_t base_tree_final_size;   // data to allocate
+        uint64_t diff_data_offset_start; // diff offset in this file
+    } frames[MAX_SUPPORTED_GRID_COUNT];
 };
 
-struct diff_rotation
+struct block_description
 {
-    int16_t x : 4;
-    int16_t y : 4;
-    int16_t z : 4;
+    uint32_t dct_data_start_offset;
+    uint32_t dct_data_compressed_size;
+    uint32_t dct_data_uncompressed_size;
+};
+} // namespace headers
+
+namespace code_points
+{
+struct setup
+{
+    bool has_source : 1;
+    bool has_rotation : 1;
+    bool has_fma : 1;
+    bool has_dct : 1;
+};
+
+struct rotation_offset
+{
+    int16_t x : 5;
+    int16_t y : 5;
+    int16_t z : 5;
 
     int n_post_copy()
     {
@@ -85,23 +121,13 @@ struct diff_rotation
     }
 };
 
-struct diff_post_copy
+struct rotation_fma
 {
-    uint32_t src_leaf;
+    float add, multiply;
 };
 
-struct diff_dct_header
-{
-    uint16_t code_points;
-};
-
-struct diff_dct_value
-{
-    int8_t value;
-};
-
-struct diff_dct_zero_length
-{
-    uint8_t length;
-};
+using source_key = uint64_t;
+using dct_index = uint32_t;
+using dct_fma = rotation_fma;
+} // namespace code_points
 } // namespace dvdb

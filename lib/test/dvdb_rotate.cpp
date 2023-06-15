@@ -3,11 +3,14 @@
 
 #include "dump.hpp"
 
+#include <common.hpp>
+#include <compression.hpp>
 #include <dct.hpp>
-#include <fma.hpp>
+#include <derivative.hpp>
 #include <nvdb_mmap.hpp>
 #include <resource_path.hpp>
 #include <rotate.hpp>
+#include <statistics.hpp>
 
 #include <glm/glm.hpp>
 #include <nanovdb/PNanoVDB.h>
@@ -46,7 +49,25 @@ class dvdb_init
         }
     }
 
-    void append_upper_leaves_from_nvdb(pnanovdb_buf_t buf, pnanovdb_upper_handle_t upper, std::unordered_map<glm::ivec3, pnanovdb_leaf_handle_t> *dest, glm::ivec3 coord)
+    void append_lower_leaves_from_nvdb(pnanovdb_buf_t buf, pnanovdb_lower_handle_t lower, std::vector<std::pair<glm::ivec3, pnanovdb_leaf_handle_t>> *dest, glm::ivec3 coord)
+    {
+        for (int i = 0; i < PNANOVDB_LOWER_TABLE_COUNT; ++i)
+        {
+            if (!pnanovdb_lower_get_child_mask(buf, lower, i))
+            {
+                continue;
+            }
+
+            glm::ivec3 subcoord{(i >> 0) & 0xf, (i >> 4) & 0xf, (i >> 8) & 0xf};
+
+            const auto leaf = pnanovdb_lower_get_child(PNANOVDB_GRID_TYPE_FLOAT, buf, lower, i);
+
+            dest->emplace_back(subcoord + coord, leaf);
+        }
+    }
+
+    template <typename T>
+    void append_upper_leaves_from_nvdb(pnanovdb_buf_t buf, pnanovdb_upper_handle_t upper, T *dest, glm::ivec3 coord)
     {
         for (int i = 0; i < PNANOVDB_UPPER_TABLE_COUNT; ++i)
         {
@@ -61,7 +82,8 @@ class dvdb_init
         }
     }
 
-    void append_grid_leaves_from_nvdb(pnanovdb_buf_t buf, std::unordered_map<glm::ivec3, pnanovdb_leaf_handle_t> *dest)
+    template <typename T>
+    void append_grid_leaves_from_nvdb(pnanovdb_buf_t buf, T *dest)
     {
         const pnanovdb_grid_handle_t grid{};
         const pnanovdb_grid_type_t type = pnanovdb_grid_get_grid_type(buf, grid);
@@ -86,7 +108,7 @@ class dvdb_init
 
 public:
     dvdb_init()
-        : src_nvdb_mmap(utils::resource_path("test/src.nvdb")), dst_nvdb_mmap(utils::resource_path("test/dst.nvdb"))
+        : src_nvdb_mmap(utils::resource_path("test/src_big.nvdb")), dst_nvdb_mmap(utils::resource_path("test/dst_big.nvdb"))
     {
         static bool initialized = false;
 
@@ -96,21 +118,24 @@ public:
         }
 
         {
-            const auto &grid = src_nvdb_mmap.grids()[1];
+            const auto &grid = src_nvdb_mmap.grids()[0];
             src_buf = {reinterpret_cast<uint32_t *>(const_cast<void *>(grid.ptr))};
             append_grid_leaves_from_nvdb(src_buf, &src_pos_cubes);
+            append_grid_leaves_from_nvdb(src_buf, &src_pos_cubes_vector);
         }
 
         {
-            const auto &grid = dst_nvdb_mmap.grids()[1];
+            const auto &grid = dst_nvdb_mmap.grids()[0];
             dst_buf = {reinterpret_cast<uint32_t *>(const_cast<void *>(grid.ptr))};
             append_grid_leaves_from_nvdb(dst_buf, &dst_pos_cubes);
+            append_grid_leaves_from_nvdb(dst_buf, &dst_pos_cubes_vector);
         }
     }
 
     pnanovdb_buf_t src_buf, dst_buf;
     utils::nvdb_mmap src_nvdb_mmap, dst_nvdb_mmap;
     std::unordered_map<glm::ivec3, pnanovdb_leaf_handle_t> src_pos_cubes, dst_pos_cubes;
+    std::vector<std::pair<glm::ivec3, pnanovdb_leaf_handle_t>> src_pos_cubes_vector, dst_pos_cubes_vector;
 };
 
 void make_cubes(dvdb::cube_888_f32 *dst, int n)
@@ -264,6 +289,7 @@ static constexpr void *vdb_deref(pnanovdb_address_t address, pnanovdb_buf_t buf)
 
 // TEST_CASE("Gradient rotation")
 // {
+//     static constexpr glm::vec3 high_coord{24.f, 25.f, 26.f};
 //     dvdb::cube_888_f32 cubes[27], rotated;
 
 //     for (int i = -1; i <= 1; ++i)
@@ -283,7 +309,6 @@ static constexpr void *vdb_deref(pnanovdb_address_t address, pnanovdb_buf_t buf)
 //                             const auto cube_index = x + (y << 3) + (z << 6);
 
 //                             glm::vec3 vcoord = (glm::vec3(i, j, k) + 1.f) * 8.f + glm::vec3(x, y, z);
-//                             static constexpr glm::vec3 high_coord{24.f, 24.f, 24.f};
 
 //                             cubes[index].values[cube_index] = glm::length(vcoord) / glm::length(high_coord);
 //                         }
@@ -293,56 +318,331 @@ static constexpr void *vdb_deref(pnanovdb_address_t address, pnanovdb_buf_t buf)
 //         }
 //     }
 
-//     dvdb::rotate_refill(&rotated, cubes, -8, -8, -8);
+//     for (int i = 0; i <= 16; ++i)
+//     {
+//         for (int j = 0; j <= 16; ++j)
+//         {
+//             for (int k = 0; k <= 16; ++k)
+//             {
+//                 const auto index = coord_to_neighbor_index(i, j, k);
+
+//                 for (int x = 0; x < 8; ++x)
+//                 {
+//                     for (int y = 0; y < 8; ++y)
+//                     {
+//                         for (int z = 0; z < 8; ++z)
+//                         {
+//                             const auto cube_index = x + (y << 3) + (z << 6);
+
+//                             glm::vec3 vcoord = glm::vec3(i, j, k) + glm::vec3(x, y, z);
+//                             float expected = glm::length(vcoord) / glm::length(high_coord);
+
+//                             dvdb::rotate_refill(&rotated, cubes, -(i - 8), -(j - 8), -(k - 8));
+
+//                             REQUIRE(rotated.values[cube_index] == expected);
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
 // }
 
-TEST_CASE_METHOD(dvdb_init, "find_similars")
+// TEST_CASE_METHOD(dvdb_init, "find_similars_astar_and_brute_force")
+// {
+//     dvdb::cube_888_f32 cubes[27], dst;
+
+//     size_t count = 0, exact_count = 0;
+//     double accumulated_error = 0;
+
+//     auto nullnans = [](dvdb::cube_888_f32 *cube) {
+//         for (int i = 0; i < std::size(cube->values); ++i)
+//         {
+//             if (std::isnan(cube->values[i]))
+//             {
+//                 cube->values[i] = 0;
+//             }
+//         }
+//     };
+
+//     for (const auto &[dpos, dleaf] : dst_pos_cubes)
+//     {
+//         {
+//             auto table_address = pnanovdb_leaf_get_table_address(PNANOVDB_GRID_TYPE_FLOAT, dst_buf, dleaf, 0);
+//             std::memcpy(&dst, vdb_deref(table_address, dst_buf), sizeof(dst));
+//         }
+
+//         for (int i = 0; i < MAX_INDEX; ++i)
+//         {
+//             const auto spos = index_to_coord(i) + dpos;
+//             const auto sleaf_it = src_pos_cubes.find(spos);
+
+//             if (sleaf_it == src_pos_cubes.end())
+//             {
+//                 std::memset(cubes + i, 0, sizeof(*cubes));
+//                 continue;
+//             }
+
+//             auto table_address = pnanovdb_leaf_get_table_address(PNANOVDB_GRID_TYPE_FLOAT, src_buf, sleaf_it->second, 0);
+
+//             std::memcpy(cubes + i, vdb_deref(table_address, src_buf), sizeof(*cubes));
+
+//             nullnans(cubes + i);
+//         }
+
+//         glm::ivec3 rot_astar, rot_brute_force;
+//         dvdb::cube_888_f32 converted;
+
+//         dvdb::rotate_refill_find_astar(&dst, cubes, &rot_astar.x, &rot_astar.y, &rot_astar.z);
+//         dvdb::rotate_refill_find_brute_force(&dst, cubes, &rot_brute_force.x, &rot_brute_force.y, &rot_brute_force.z);
+
+//         if (rot_brute_force == rot_astar || (std::abs(rot_brute_force.x) > 6 || std::abs(rot_brute_force.y) > 6 || std::abs(rot_brute_force.z) > 6))
+//         {
+//             ++exact_count;
+//         }
+
+//         dvdb::rotate_refill(&converted, cubes, rot_brute_force.x, rot_brute_force.y, rot_brute_force.z);
+//         float add, mul;
+
+//         dvdb::linear_regression(&converted, &dst, &add, &mul);
+//         dvdb::fma(&converted, &converted, add, mul);
+
+//         if (count == 29)
+//         {
+//             int _ = 0;
+//         }
+
+//         accumulated_error += dvdb::mean_squared_error(&converted, &dst);
+//         ++count;
+//     }
+
+//     accumulated_error /= count;
+
+//     std::printf("final error == %f\n", accumulated_error);
+//     std::printf("astar results in the exact same rotation %f%% of times.\n", exact_count * 100.f / count);
+//     CHECK(accumulated_error < 0.005);
+// }
+
+TEST_CASE_METHOD(dvdb_init, "find_similars_brute_force")
 {
     dvdb::cube_888_f32 cubes[27], dst;
+    dvdb::cube_888_mask mask;
 
-    for (const auto &[dpos, dleaf] : dst_pos_cubes)
+    int w0 = 0, w1 = 0, w2 = 0;
+
+    std::puts("my, n8, n4, compression_ratio");
+
+    for (int qi = 1; qi < 255; ++qi)
     {
-        {
-            auto table_address = pnanovdb_leaf_get_table_address(PNANOVDB_GRID_TYPE_FLOAT, dst_buf, dleaf, 0);
-            std::memcpy(&dst, vdb_deref(table_address, dst_buf), sizeof(dst));
-        }
+        size_t count = 0;
 
-        for (int i = 0; i < MAX_INDEX; ++i)
-        {
-            const auto spos = index_to_coord(i) + dpos;
-            const auto sleaf_it = src_pos_cubes.find(spos);
+        double acc_errorh = 0;
+        double acc_error = 0;
+        double acc_error4 = 0;
+        double acc_error8 = 0;
+        double acc_unmasked_error = 0;
+        double acc_unmasked_error4 = 0;
+        double acc_unmasked_error8 = 0;
 
-            if (sleaf_it == src_pos_cubes.end())
+        std::vector<dvdb::cube_888_i8> dct_cubes;
+
+        auto nullnans = [](dvdb::cube_888_f32 *cube) {
+            for (int i = 0; i < std::size(cube->values); ++i)
             {
-                std::memset(cubes + 1, 0, sizeof(*cubes));
-                continue;
+                if (std::isnan(cube->values[i]))
+                {
+                    cube->values[i] = 0;
+                }
+            }
+        };
+
+        for (size_t di = 0; di < dst_pos_cubes_vector.size(); ++di)
+        {
+            const auto &dpos = dst_pos_cubes_vector[di].first;
+            const auto &dleaf = dst_pos_cubes_vector[di].second;
+
+            // if (di > 1000)
+            // {
+            //     continue;
+            // }
+
+            float sum = 0;
+
+            {
+                auto table_address = pnanovdb_leaf_get_table_address(PNANOVDB_GRID_TYPE_FLOAT, dst_buf, dleaf, 0);
+                std::memcpy(&dst, vdb_deref(table_address, dst_buf), sizeof(dst));
             }
 
-            auto table_address = pnanovdb_leaf_get_table_address(PNANOVDB_GRID_TYPE_FLOAT, src_buf, sleaf_it->second, 0);
+            for (int i = 0; i < 512; ++i)
+            {
+                sum += dst.values[i];
+            }
 
-            std::memcpy(cubes + i, vdb_deref(table_address, src_buf), sizeof(*cubes));
+            // if (sum < 20.0)
+            // {
+            //     continue;
+            // }
+
+            {
+                auto leafptr = reinterpret_cast<pnanovdb_leaf_t *>((dleaf.address.byte_offset >> 2) + dst_buf.data);
+                std::memcpy(&mask, leafptr->value_mask, sizeof(mask));
+            }
+
+            dvdb::cube_888_f32 fmask = mask.as_values<float, 1, 0>();
+
+            for (int i = 0; i < MAX_INDEX; ++i)
+            {
+                const auto spos = index_to_coord(i) + dpos;
+                const auto sleaf_it = src_pos_cubes.find(spos);
+
+                if (sleaf_it == src_pos_cubes.end())
+                {
+                    std::memset(cubes + i, 0, sizeof(*cubes));
+                    continue;
+                }
+
+                auto table_address = pnanovdb_leaf_get_table_address(PNANOVDB_GRID_TYPE_FLOAT, src_buf, sleaf_it->second, 0);
+
+                std::memcpy(cubes + i, vdb_deref(table_address, src_buf), sizeof(*cubes));
+
+                nullnans(cubes + i);
+            }
+
+            glm::ivec3 rot;
+            dvdb::cube_888_f32 converted;
+            dvdb::cube_888_f32 reference8;
+            dvdb::cube_888_f32 reference4;
+            dvdb::cube_888_i8 h0, h1, h2;
+
+            // make reference aka NanoVDB
+            {
+                dvdb::cube_888_i8 mid;
+                float min, max;
+
+                dvdb::encode_derivative_to_i8(&dst, &mid, &max, &min, 0xff);
+                dvdb::decode_derivative_from_i8(&mid, &reference8, max, min, 0xff);
+                h1 = mid;
+
+                dvdb::encode_derivative_to_i8(&dst, &mid, &max, &min, 0x0f);
+                dvdb::decode_derivative_from_i8(&mid, &reference4, max, min, 0x0f);
+                h2 = mid;
+
+                dct_cubes.push_back(mid);
+            }
+
+            dvdb::rotate_refill_find_astar(&dst, cubes, &rot.x, &rot.y, &rot.z);
+            dvdb::rotate_refill(&converted, cubes, rot.x, rot.y, rot.z);
+
+            // std::printf("best rotation: %d %d %d\n", rot.x, rot.y, rot.z);
+
+            // dump("/tmp/sleaf.data", cubes[coord_to_neighbor_index(0, 0, 0)]);
+            // dump("/tmp/dleaf.data", dst);
+
+            float add, mul;
+
+            dvdb::linear_regression_with_mask(&converted, &dst, &add, &mul, &fmask);
+            dvdb::fma(&converted, &converted, add, mul);
+
+            dvdb::cube_888_f32 diff;
+
+            dvdb::sub(&dst, &converted, &diff);
+            dvdb::mul(&diff, &fmask, &diff);
+
+            {
+                dvdb::cube_888_f32 dct;
+                dvdb::cube_888_i8 mid;
+                float min, max;
+
+                uint8_t quant = 0x0f;
+
+                // dvdb::dct_3d_encode(&diff, &dct);
+                // dvdb::encode_derivative_to_i8(&dct, &mid, &max, &min, quant);
+
+                // dct_cubes.push_back(mid);
+
+                // dvdb::decode_derivative_from_i8(&mid, &dct, max, min, quant);
+                // dvdb::dct_3d_decode(&dct, &diff);
+
+                dvdb::encode_derivative_to_i8(&diff, &mid, &max, &min, quant);
+                // h0 = mid;
+                dct_cubes.push_back(mid);
+                dvdb::decode_derivative_from_i8(&mid, &diff, max, min, quant);
+            }
+
+            dvdb::add(&converted, &diff, &converted);
+            dvdb::mul(&diff, &fmask, &diff);
+
+            if (count == 29)
+            {
+                int _ = 0;
+                // continue;
+            }
+
+            float e0 = dvdb::mean_squared_error_with_mask(&converted, &dst, &fmask);
+            float e1 = dvdb::mean_squared_error_with_mask(&reference8, &dst, &fmask);
+            float e2 = dvdb::mean_squared_error_with_mask(&reference4, &dst, &fmask);
+
+            acc_error += e0;
+            acc_error8 += e1;
+            acc_error4 += e2;
+
+            // if (e0 < e1 && e0 < e2)
+            // {
+            //     ++w0;
+            //     acc_errorh += e0;
+            //     dct_cubes.push_back(h0);
+            // }
+            // else
+            // {
+            //     if (e1 < e2)
+            //     {
+            //         ++w1;
+            //         acc_errorh += e1;
+            //         dct_cubes.push_back(h1);
+            //     }
+            //     else
+            //     {
+            //         ++w2;
+            //         acc_errorh += e2;
+            //         dct_cubes.push_back(h2);
+            //     }
+            // }
+
+            acc_unmasked_error += dvdb::mean_squared_error(&converted, &dst);
+            acc_unmasked_error8 += dvdb::mean_squared_error(&reference8, &dst);
+            acc_unmasked_error4 += dvdb::mean_squared_error(&reference4, &dst);
+
+            ++count;
         }
 
-        glm::ivec3 rot;
-        dvdb::cube_888_f32 converted;
+        acc_error /= count;
+        acc_error8 /= count;
+        acc_error4 /= count;
 
-        dvdb::rotate_refill_find(&dst, cubes, &rot.x, &rot.y, &rot.z);
-        dvdb::rotate_refill(&converted, cubes, rot.x, rot.y, rot.z);
+        acc_unmasked_error /= count;
+        acc_unmasked_error8 /= count;
+        acc_unmasked_error4 /= count;
 
-        std::printf("best rotation: %d %d %d\n", rot.x, rot.y, rot.z);
+        std::printf("%f, ", sqrt(acc_error));
+        std::printf("%f, ", sqrt(acc_error8));
+        std::printf("%f, ", sqrt(acc_error4));
 
-        // dump("/tmp/sleaf.data", cubes[coord_to_neighbor_index(0, 0, 0)]);
-        // dump("/tmp/dleaf.data", dst);
-        // dump("/tmp/conve.data", converted);
+        // std::printf("final mine error == %f\n", sqrt(acc_error));
+        // std::printf("final 8bit error == %f\n", sqrt(acc_error8));
+        // std::printf("final 4bit error == %f\n", sqrt(acc_error4));
 
-        float add, mul;
+        // std::printf("unmasked mine error == %f\n", sqrt(acc_unmasked_error));
+        // std::printf("unmasked 8bit error == %f\n", sqrt(acc_unmasked_error8));
+        // std::printf("unmasked 4bit error == %f\n", sqrt(acc_unmasked_error4));
 
-        dvdb::find_fused_multiply_add(&converted, &dst, &add, &mul);
-        dvdb::fused_multiply_add(&converted, &converted, add, mul);
+        // compression test
+        std::vector<char> buffer(dct_cubes.size() * 512);
 
-        // dump("/tmp/conve_fma.data", converted);
+        int compressed_size = dvdb::compress_stream(reinterpret_cast<char *>(dct_cubes.data()), dct_cubes.size() * 512, buffer.data(), buffer.size());
 
-        int _ = 0;
+        std::printf("%f\n", dct_cubes.size() * 512.f / compressed_size);
+        // std::printf("w0: %d, w1: %d, w2: %d\n", w0, w1, w2);
+
         break;
     }
 }

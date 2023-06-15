@@ -21,7 +21,7 @@ public:
 
     void create_keyframe(std::filesystem::path);
     void add_diff_frame(std::filesystem::path);
-    conversion_result process_next_frame();
+    conversion_result process_next();
 
 private:
     std::shared_ptr<utils::thread_pool> _thread_pool;

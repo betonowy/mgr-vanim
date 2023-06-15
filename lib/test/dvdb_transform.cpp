@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <transform.hpp>
 #include <cstdio>
 #include <cstring>
+#include <transform.hpp>
 
 TEST_CASE("cube888_dct_coord_test_f32")
 {
@@ -67,4 +67,14 @@ TEST_CASE("cube888_check_hilbert_properties")
         py = y;
         pz = z;
     }
+}
+
+TEST_CASE("alignment")
+{
+    dvdb::cube_888_f32 src{};
+
+    const auto fake = reinterpret_cast<dvdb::cube_888_f32 *>(321214211267);
+
+    CHECK(src.is_avx_aligned());
+    CHECK_FALSE(fake->is_avx_aligned());
 }

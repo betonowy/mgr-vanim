@@ -49,7 +49,6 @@ vanim_add_benchmark(
         src/dvdb/transform.cpp
         src/dvdb/derivative.cpp
         src/dvdb/rotate.cpp
-        src/dvdb/fma.cpp
         src/dvdb/compression.cpp
         src/dvdb/common.cpp
     INCLUDES src/dvdb src/utils
@@ -105,16 +104,10 @@ vanim_add_test(
         src/dvdb/transform.cpp
         src/dvdb/derivative.cpp
         src/dvdb/rotate.cpp
-        src/dvdb/fma.cpp
         src/dvdb/common.cpp
+        src/dvdb/compression.cpp
     INCLUDES src/dvdb src/utils
     LIBS mio::mio nanovdb glm::glm
-)
-
-vanim_add_test(
-    NAME dvdb_fma
-    SOURCES src/dvdb/fma.cpp src/dvdb/statistics.cpp src/dvdb/common.cpp
-    INCLUDES src/dvdb
 )
 
 vanim_add_test(

@@ -40,6 +40,8 @@ void map_values(float src_a, float src_b, float dst_a, float dst_b, const cube_8
 }
 
 static constexpr auto range_a = 0;
+static constexpr float gamma = 0.87f; // magic value - don't touch
+static constexpr int start_record = 1; // don't gamma correct first value (base component)
 
 void encode_derivative_to_i8(const cube_888_f32 *src, cube_888_i8 *der, float *max, float *min, uint8_t quantization_limit)
 {
@@ -52,6 +54,7 @@ void encode_derivative_to_i8(const cube_888_f32 *src, cube_888_i8 *der, float *m
     }
 
     cube_888_f32 mid;
+
     map_values(*min, *max, range_a, quantization_limit, src, &mid);
 
     uint8_t prev_value = 0;

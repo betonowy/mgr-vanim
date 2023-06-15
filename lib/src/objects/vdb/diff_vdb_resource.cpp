@@ -146,9 +146,9 @@ void grid_reconstruction_rle(void *diff_ptr, void *dst_ptr, void *src_ptr)
 
     for (size_t i = 0; i < dst_leaf_count; ++i)
     {
-        const auto *desc = (dvdb::diff_desc *)(diff_current_ptr);
+        const auto *desc = (dvdb::code_desc *)(diff_current_ptr);
 
-        diff_current_ptr += sizeof(dvdb::diff_desc);
+        diff_current_ptr += sizeof(dvdb::code_desc);
 
         const auto *code = (dvdb::rle_diff_code *)(diff_current_ptr);
 

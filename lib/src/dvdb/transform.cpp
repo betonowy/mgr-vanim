@@ -117,10 +117,10 @@ void transform_hilbert_to_carthesian(const cube_888_i8 *src, cube_888_i8 *dst)
 // leave for now just in case better analytical transform is found
 void transform_init()
 {
-    // for (int i = 0; i < std::size(coord_transform_indices.values); ++i)
-    // {
-    //     coord_transform_indices.values[i] = i;
-    // }
+    for (int i = 0; i < std::size(hilbert_curve_indices.values); ++i)
+    {
+        hilbert_curve_indices.values[i] = i;
+    }
 
     // std::sort(std::begin(coord_transform_indices.values), std::end(coord_transform_indices.values), [](uint16_t lhs, uint16_t rhs) -> bool {
     //     int lhs_x = (lhs & 0b000000111) >> 0;

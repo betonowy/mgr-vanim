@@ -23,7 +23,7 @@ void dct_encode_cell_f32(const cube_888_f32 *src, float *wgt, const cube_888_f32
 #pragma GCC unroll 64
     for (int i = 0; i < std::size(src->values); i += 8)
     {
-        __m256 ymm_src = _mm256_loadu_ps(src->values + i);
+        __m256 ymm_src = _mm256_load_ps(src->values + i);
         __m256 ymm_dct = _mm256_load_ps(dct->values + i);
 
         ymm_partial_wgt = _mm256_fmadd_ps(ymm_src, ymm_dct, ymm_partial_wgt);
@@ -52,11 +52,11 @@ void dct_accumulate_decode_cell(float wgt, const cube_888_f32 *dct, cube_888_f32
     for (int i = 0; i < std::size(dst->values); i += 8)
     {
         __m256 ymm_dct = _mm256_load_ps(dct->values + i);
-        __m256 ymm_dst = _mm256_loadu_ps(dst->values + i);
+        __m256 ymm_dst = _mm256_load_ps(dst->values + i);
 
         ymm_dst = _mm256_fmadd_ps(ymm_wgt, ymm_dct, ymm_dst);
 
-        _mm256_storeu_ps(dst->values + i, ymm_dst);
+        _mm256_store_ps(dst->values + i, ymm_dst);
     }
 }
 
