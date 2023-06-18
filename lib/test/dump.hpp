@@ -5,7 +5,7 @@
 #include <iterator>
 
 #include <filesystem>
-#include <types.hpp>
+#include <dvdb/types.hpp>
 
 inline void dump(const char *path, dvdb::cube_888_f32 in)
 {

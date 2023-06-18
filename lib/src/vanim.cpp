@@ -54,9 +54,6 @@ void run()
     dvdb::dct_init();
     std::cout << "DCT tables initialized.\n";
 
-    dvdb::transform_init();
-    std::cout << "Coord transform tables initialized.";
-
     openvdb::initialize();
     std::cout << "OpenVDB initialized.\n";
 

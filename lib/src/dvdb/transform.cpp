@@ -113,28 +113,4 @@ void transform_hilbert_to_carthesian(const cube_888_i8 *src, cube_888_i8 *dst)
 {
     hilbert_to_carthesian_impl(src, dst);
 }
-
-// leave for now just in case better analytical transform is found
-void transform_init()
-{
-    for (int i = 0; i < std::size(hilbert_curve_indices.values); ++i)
-    {
-        hilbert_curve_indices.values[i] = i;
-    }
-
-    // std::sort(std::begin(coord_transform_indices.values), std::end(coord_transform_indices.values), [](uint16_t lhs, uint16_t rhs) -> bool {
-    //     int lhs_x = (lhs & 0b000000111) >> 0;
-    //     int lhs_y = (lhs & 0b000111000) >> 3;
-    //     int lhs_z = (lhs & 0b111000000) >> 6;
-
-    //     int rhs_x = (rhs & 0b000000111) >> 0;
-    //     int rhs_y = (rhs & 0b000111000) >> 3;
-    //     int rhs_z = (rhs & 0b111000000) >> 6;
-
-    //     int lhs_sum = lhs_x * lhs_x + lhs_y * lhs_y + lhs_z * lhs_z;
-    //     int rhs_sum = rhs_x * rhs_x + rhs_y * rhs_y + rhs_z * rhs_z;
-
-    //     return (lhs_sum < rhs_sum) || (lhs < rhs);
-    // });
-}
 } // namespace dvdb

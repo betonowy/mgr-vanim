@@ -40,78 +40,42 @@ endif()
 
 vanim_add_benchmark(
     NAME dvdb_benchmarks
-    SOURCES 
-        test/dvdb_benchmark_cases.cpp
-        src/utils/resource_path.cpp
-        src/utils/nvdb_mmap.cpp
-        src/dvdb/dct.cpp
-        src/dvdb/statistics.cpp
-        src/dvdb/transform.cpp
-        src/dvdb/derivative.cpp
-        src/dvdb/rotate.cpp
-        src/dvdb/compression.cpp
-        src/dvdb/common.cpp
-    INCLUDES src/dvdb src/utils
-    LIBS glm::glm nanovdb lz4::lz4
+    INCLUDES src/dvdb src/utils src
+    LIBS glm::glm nanovdb lz4::lz4 vanim
 )
 
 vanim_add_test(
     NAME dvdb_transform
-    SOURCES src/dvdb/transform.cpp
-    INCLUDES src/dvdb
+    INCLUDES src/dvdb src vanim
+    LIBS vanim
 )
 
 vanim_add_test(
     NAME dvdb_dct
-    SOURCES
-        src/dvdb/dct.cpp
-        src/dvdb/statistics.cpp
-        src/dvdb/transform.cpp
-        src/dvdb/derivative.cpp
-        src/dvdb/common.cpp
-    INCLUDES src/dvdb src/utils
-    LIBS mio::mio glm::glm
+    INCLUDES src/dvdb src/utils src
+    LIBS mio::mio glm::glm vanim
 )
 
 vanim_add_test(
     NAME dvdb_derivative
-    SOURCES src/dvdb/derivative.cpp
-    INCLUDES src/dvdb
+    INCLUDES src/dvdb src
+    LIBS vanim
 )
 
 vanim_add_test(
     NAME dvdb_compression
-    SOURCES
-        src/utils/resource_path.cpp
-        src/utils/nvdb_mmap.cpp
-        src/dvdb/compression.cpp
-        src/dvdb/derivative.cpp
-        src/dvdb/dct.cpp
-        src/dvdb/statistics.cpp
-        src/dvdb/transform.cpp
-        src/dvdb/common.cpp
-    INCLUDES src/dvdb src/utils
-    LIBS lz4::lz4 nanovdb
+    INCLUDES src/dvdb src/utils src
+    LIBS lz4::lz4 nanovdb vanim
 )
 
 vanim_add_test(
     NAME dvdb_rotate
-    SOURCES 
-        src/utils/resource_path.cpp
-        src/utils/nvdb_mmap.cpp
-        src/dvdb/dct.cpp
-        src/dvdb/statistics.cpp
-        src/dvdb/transform.cpp
-        src/dvdb/derivative.cpp
-        src/dvdb/rotate.cpp
-        src/dvdb/common.cpp
-        src/dvdb/compression.cpp
-    INCLUDES src/dvdb src/utils
-    LIBS mio::mio nanovdb glm::glm
+    INCLUDES src/dvdb src/utils src
+    LIBS mio::mio nanovdb glm::glm vanim
 )
 
 vanim_add_test(
     NAME dvdb_statistics
-    SOURCES src/dvdb/statistics.cpp src/dvdb/common.cpp
-    INCLUDES src/dvdb
+    INCLUDES src/dvdb src
+    LIBS vanim
 )

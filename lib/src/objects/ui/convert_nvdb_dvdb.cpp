@@ -39,9 +39,9 @@ convert_nvdb_dvdb::job_result convert_nvdb_dvdb_job(std::vector<std::filesystem:
     auto file = std::move(files.back());
     files.pop_back();
 
-    bool make_keyframe = files.size() % 5 == 0 || files.size() > 97;
-
     size_t current_processed_count = initial_count - files.size();
+
+    bool make_keyframe = (current_processed_count - 1) % 10 == 0;
 
     res.progress = 1.f - (static_cast<float>(files.size()) / initial_count);
 
@@ -138,6 +138,8 @@ void convert_nvdb_dvdb::update(scene::object_context &ctx, float)
 {
     if (_current_status.finished)
     {
+        _current_status.description += "\n\nCompression ratio: " + std::to_string(dvdb_converter->current_compression_ratio());
+
         ctx.add_object(std::make_shared<popup>(u8"Success", std::u8string(reinterpret_cast<const char8_t *>(_current_status.description.c_str()))));
         return destroy();
     }
@@ -162,12 +164,15 @@ void convert_nvdb_dvdb::update(scene::object_context &ctx, float)
         _current_status = std::move(job_result);
     }
 
-    auto half_size = ImGui::GetIO().DisplaySize;
-    half_size.x /= 2;
-    half_size.y /= 2;
+    auto window_size = ImGui::GetIO().DisplaySize;
+    auto window_pos = window_size;
+    window_pos.x /= 2;
+    window_pos.y /= 2;
+    window_size.x *= 0.8f;
+    window_size.y *= 0.8f;
 
-    ImGui::SetNextWindowSize(half_size);
-    ImGui::SetNextWindowPos(half_size, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(window_size);
+    ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 
     if (ImGui::Begin("Converting NanoVDB to DiffVDB", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize))
     {
@@ -181,6 +186,15 @@ void convert_nvdb_dvdb::update(scene::object_context &ctx, float)
 
         ImGui::ProgressBar(_current_status.progress, ImVec2(-FLT_MIN, 0),
                            _current_status.description.empty() ? nullptr : _current_status.description.c_str());
+
+        ImGui::Text("Compression ratio: %f", dvdb_converter->current_compression_ratio());
+
+        ImGui::TextUnformatted(dvdb_converter->current_step().c_str());
+
+        if (dvdb_converter->current_total_leaves() > 0)
+        {
+            ImGui::Text("[%lu/%lu]", dvdb_converter->current_processed_leaves(), dvdb_converter->current_total_leaves());
+        }
 
         ImGui::PopStyleColor();
     }

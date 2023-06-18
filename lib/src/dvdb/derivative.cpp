@@ -40,7 +40,7 @@ void map_values(float src_a, float src_b, float dst_a, float dst_b, const cube_8
 }
 
 static constexpr auto range_a = 0;
-static constexpr float gamma = 0.87f; // magic value - don't touch
+static constexpr float gamma = 0.87f;  // magic value - don't touch
 static constexpr int start_record = 1; // don't gamma correct first value (base component)
 
 void encode_derivative_to_i8(const cube_888_f32 *src, cube_888_i8 *der, float *max, float *min, uint8_t quantization_limit)
@@ -80,5 +80,37 @@ void decode_derivative_from_i8(const cube_888_i8 *der, cube_888_f32 *res, float 
     }
 
     map_values(range_a, quantization_limit, min, max, &mid, res);
+}
+
+void encode_to_i8(const cube_888_f32 *src, cube_888_i8 *dst, float *max, float *min, uint8_t quantization_limit)
+{
+    *min = *max = src->values[0];
+
+    for (int i = 1; i < std::size(src->values); ++i)
+    {
+        *max = std::max(*max, src->values[i]);
+        *min = std::min(*min, src->values[i]);
+    }
+
+    cube_888_f32 mid;
+
+    map_values(*min, *max, range_a, quantization_limit, src, &mid);
+
+    for (int i = 0; i < std::size(dst->values); ++i)
+    {
+        dst->values[i] = std::round(mid.values[i]);
+    }
+}
+
+void decode_from_i8(const cube_888_i8 *src, cube_888_f32 *dst, float max, float min, uint8_t quantization_limit)
+{
+    cube_888_f32 mid;
+
+    for (int i = 0; i < std::size(src->values); ++i)
+    {
+        mid.values[i] = src->values[i];
+    }
+
+    map_values(range_a, quantization_limit, min, max, &mid, dst);
 }
 } // namespace dvdb

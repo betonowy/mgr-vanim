@@ -1,7 +1,15 @@
 #include "diff_vdb_resource.hpp"
 
-#include <dvdb/dvdb_header.hpp>
-#include <dvdb/dvdb_rle.hpp>
+#include <converter/dvdb_compressor.hpp>
+#include <converter/dvdb_converter_nvdb.hpp>
+
+#include <dvdb/common.hpp>
+#include <dvdb/compression.hpp>
+#include <dvdb/dct.hpp>
+#include <dvdb/derivative.hpp>
+#include <dvdb/rotate.hpp>
+#include <dvdb/statistics.hpp>
+#include <dvdb/types.hpp>
 #include <scene/object_context.hpp>
 #include <utils/future_helpers.hpp>
 #include <utils/memory_counter.hpp>
@@ -16,6 +24,8 @@
 #include <regex>
 
 #include <nanovdb/PNanoVDB.h>
+
+#include "../test/dump.hpp"
 
 namespace objects::vdb
 {
@@ -86,9 +96,9 @@ void diff_vdb_resource::init(scene::object_context &ctx)
 
     for (const auto &[n, path] : _dvdb_frames)
     {
-        mio::mmap_source dvdb_mmap(path.string());
+        auto buffer = converter::unpack_file(path.c_str());
 
-        const auto header = reinterpret_cast<const dvdb::header *>(dvdb_mmap.data());
+        const auto header = reinterpret_cast<const dvdb::headers::main *>(buffer.data());
 
         if (header->vdb_required_size > max_buffer_size)
         {
@@ -120,55 +130,132 @@ void diff_vdb_resource::init(scene::object_context &ctx)
     }
 }
 
+template <typename T>
+T read(uint8_t *&data)
+{
+    T obj = *reinterpret_cast<T *>(data);
+    data += sizeof(obj);
+    return obj;
+}
+
+static dvdb::cube_888_mask empty_mask{};
+static dvdb::cube_888_f32 empty_values{};
+
 void grid_reconstruction_rle(void *diff_ptr, void *dst_ptr, void *src_ptr)
 {
-    const pnanovdb_buf_t src_buf{.data = reinterpret_cast<uint32_t *>(const_cast<void *>(src_ptr))};
-    const pnanovdb_buf_t dst_buf{.data = reinterpret_cast<uint32_t *>(const_cast<void *>(dst_ptr))};
+    converter::nvdb_reader dst_accessor, src_accessor;
 
-    pnanovdb_grid_handle_t src_grid{}, dst_grid{};
-    pnanovdb_tree_handle_t src_tree, dst_tree;
+    dst_accessor.initialize(dst_ptr);
+    src_accessor.initialize(src_ptr);
 
-    uint32_t src_leaf_offset, dst_leaf_offset;
-    uint32_t src_leaf_count, dst_leaf_count;
+    auto *diff_current_ptr = reinterpret_cast<uint8_t *>(diff_ptr);
 
-    src_tree = pnanovdb_grid_get_tree(src_buf, src_grid);
-    dst_tree = pnanovdb_grid_get_tree(dst_buf, dst_grid);
+    dvdb::cube_888_f32 *src_neighbor_values_ptrs[27];
+    dvdb::cube_888_mask *src_neighbor_masks_ptrs[27];
 
-    src_leaf_offset = pnanovdb_tree_get_node_offset_leaf(src_buf, src_tree) + src_tree.address.byte_offset;
-    dst_leaf_offset = pnanovdb_tree_get_node_offset_leaf(dst_buf, dst_tree) + dst_tree.address.byte_offset;
-
-    src_leaf_count = pnanovdb_tree_get_node_count_leaf(src_buf, src_tree);
-    dst_leaf_count = pnanovdb_tree_get_node_count_leaf(dst_buf, dst_tree);
-
-    uint32_t grid_type = pnanovdb_grid_get_grid_type(src_buf, src_grid);
-
-    const auto *diff_current_ptr = reinterpret_cast<uint8_t *>(diff_ptr);
-
-    for (size_t i = 0; i < dst_leaf_count; ++i)
+    for (int i = 0; i < dst_accessor.leaf_count(); ++i)
     {
-        const auto *desc = (dvdb::code_desc *)(diff_current_ptr);
+        const auto setup = read<dvdb::code_points::setup>(diff_current_ptr);
 
-        diff_current_ptr += sizeof(dvdb::code_desc);
+        const auto setup_as_byte = *reinterpret_cast<const uint8_t *>(&setup);
 
-        const auto *code = (dvdb::rle_diff_code *)(diff_current_ptr);
+        auto dst_ptr = dst_accessor.leaf_table_ptr(i);
+        auto dst_mask_ptr = dst_accessor.leaf_bitmask_ptr(i);
 
-        const auto *constants = &pnanovdb_grid_type_constants[pnanovdb_grid_get_grid_type(src_buf, src_grid)];
+        dvdb::cube_888_f32 dst;
+        dvdb::cube_888_mask dst_mask;
 
-        const auto src_floats = (float *)(src_buf.data + (src_leaf_offset + constants->leaf_size * desc->src_leaf + constants->leaf_off_table) / sizeof(float));
-        const auto dst_floats = (float *)(dst_buf.data + (dst_leaf_offset + constants->leaf_size * desc->dst_leaf + constants->leaf_off_table) / sizeof(float));
-        const auto dst_leaf = (pnanovdb_leaf_t *)(dst_buf.data + (dst_leaf_offset + constants->leaf_size * desc->dst_leaf) / sizeof(float));
-
-        for (size_t i = 0; i < 512; ++i)
+        if (setup.has_source && setup.has_rotation)
         {
-            dst_floats[i] = code->values[i];
+            const auto source = read<dvdb::code_points::source_key>(diff_current_ptr);
+
+            const auto [x, y, z] = read<dvdb::code_points::rotation_offset>(diff_current_ptr);
+
+            src_accessor.leaf_neighbors(source, src_neighbor_values_ptrs, src_neighbor_masks_ptrs, &empty_values, &empty_mask);
+
+            dvdb::rotate_refill(&dst, src_neighbor_values_ptrs, x, y, z);
+            dvdb::rotate_refill(&dst_mask, src_neighbor_masks_ptrs, x, y, z);
+        }
+        else if (setup.has_source)
+        {
+            const auto source = read<dvdb::code_points::source_key>(diff_current_ptr);
+            const auto index = src_accessor.get_leaf_index_from_key(source);
+
+            if (index == -1)
+            {
+                dst = {};
+                dst_mask = {};
+            }
+            else
+            {
+                const auto src = src_accessor.leaf_table_ptr(index);
+                const auto src_mask = src_accessor.leaf_bitmask_ptr(index);
+
+                dst = *src;
+                dst_mask = *src_mask;
+            }
+        }
+        else
+        {
+            dst = {};
+            dst_mask = {};
         }
 
-        for (size_t i = 0; i < 16; ++i)
+        if (setup.has_fma)
         {
-            dst_leaf->value_mask[i] = ~0;
+            const auto [add, mul] = read<dvdb::code_points::fma>(diff_current_ptr);
+            dvdb::fma(&dst, &dst, add, mul);
         }
 
-        diff_current_ptr += sizeof(dvdb::rle_diff_code);
+        *dst_ptr = dst;
+        *dst_mask_ptr = dst_mask;
+
+        if (!setup.has_values)
+        {
+            continue;
+        }
+
+        const auto [quantization] = read<dvdb::code_points::quantization>(diff_current_ptr);
+
+        const auto [min, max] = [&]() {
+            if (setup.has_map)
+            {
+                return read<dvdb::code_points::map>(diff_current_ptr);
+            }
+
+            return dvdb::code_points::map{.min = 0.f, .max = 1.f};
+        }();
+
+        dvdb::cube_888_i8 encoder_values = read<dvdb::cube_888_i8>(diff_current_ptr);
+        dvdb::cube_888_f32 encoder_float_values;
+
+        if (setup.has_derivative)
+        {
+            dvdb::decode_derivative_from_i8(&encoder_values, &encoder_float_values, max, min, quantization);
+        }
+        else
+        {
+            dvdb::decode_from_i8(&encoder_values, &encoder_float_values, max, min, quantization);
+        }
+
+        dvdb::cube_888_f32 values;
+
+        if (setup.has_dct)
+        {
+            dvdb::dct_3d_decode(&encoder_float_values, &values);
+        }
+        else
+        {
+            values = encoder_float_values;
+        }
+
+        if (setup.has_diff)
+        {
+            dvdb::add(&dst, &values, &dst);
+        }
+
+        *dst_ptr = dst;
+        *dst_mask_ptr = dst_mask;
     }
 }
 
@@ -202,8 +289,10 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
         resource_locked = true;
 
         auto map_t1 = std::chrono::steady_clock::now();
-        mio::mmap_source dvdb_mmap(_dvdb_frames[frame_number].second.string());
-        const auto header = reinterpret_cast<const dvdb::header *>(dvdb_mmap.data());
+        // mio::mmap_source dvdb_mmap(_dvdb_frames[frame_number].second.string());
+        const auto source_buffer = converter::unpack_file(_dvdb_frames[frame_number].second.c_str());
+
+        const auto header = reinterpret_cast<const dvdb::headers::main *>(source_buffer.data());
         copy_size = header->vdb_required_size;
         auto map_t2 = std::chrono::steady_clock::now();
 
@@ -213,19 +302,17 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
 
         switch (header->frame_type)
         {
-        case dvdb::frame_type_e::KEY_FRAME: {
+        case dvdb::headers::main::frame_type_e::KEY_FRAME: {
             for (size_t i = 0; i < header->vdb_grid_count; ++i)
             {
                 offsets[i] = header->frames[i].base_tree_offset_start;
             }
 
-            assert(_created_state.size() >= dvdb_mmap.size());
-
-            std::memcpy(_created_state.data(), dvdb_mmap.data(), dvdb_mmap.size());
-            std::memcpy(_ssbo_ptr + block_number * _ssbo_block_size, dvdb_mmap.data(), dvdb_mmap.size());
+            _created_state = std::move(source_buffer);
+            std::memcpy(_ssbo_ptr + block_number * _ssbo_block_size, _created_state.data(), _created_state.size());
         }
         break;
-        case dvdb::frame_type_e::DIFF_FRAME: {
+        case dvdb::headers::main::frame_type_e::DIFF_FRAME: {
             offsets[0] = header->frames[0].base_tree_offset_start;
 
             for (size_t i = 1; i < header->vdb_grid_count; ++i)
@@ -233,14 +320,14 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
                 offsets[i] = offsets[i - 1] + header->frames[i - 1].base_tree_final_size;
             }
 
-            std::memcpy(_created_state.data(), dvdb_mmap.data(), sizeof(*header));
+            std::memcpy(_created_state.data(), source_buffer.data(), sizeof(*header));
 
             for (size_t i = 0; i < header->vdb_grid_count; ++i)
             {
-                std::memcpy(_created_state.data() + offsets[i], dvdb_mmap.data() + header->frames[i].base_tree_offset_start, header->frames[i].base_tree_copy_size);
+                std::memcpy(_created_state.data() + offsets[i], source_buffer.data() + header->frames[i].base_tree_offset_start, header->frames[i].base_tree_copy_size);
             }
 
-            const auto src_header = reinterpret_cast<const dvdb::header *>(_current_state.data());
+            const auto src_header = reinterpret_cast<const dvdb::headers::main *>(_current_state.data());
 
             uint64_t src_offsets[4];
 
@@ -254,7 +341,7 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
                 void *src_grid = _current_state.data() + src_offsets[i];
                 void *dst_grid = _created_state.data() + offsets[i];
                 // removing constness is ok here
-                void *diff_data = const_cast<char *>(dvdb_mmap.data()) + header->frames[i].diff_data_offset_start;
+                void *diff_data = const_cast<char *>(source_buffer.data()) + header->frames[i].diff_data_offset_start;
 
                 grid_reconstruction_rle(diff_data, dst_grid, src_grid);
             }
@@ -262,6 +349,8 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
             std::memcpy(_ssbo_ptr + block_number * _ssbo_block_size, _created_state.data(), header->vdb_required_size);
         }
         break;
+        default:
+            throw std::runtime_error("Invalid frame type! Corrupted data?");
         }
 
         auto copy_t2 = std::chrono::steady_clock::now();

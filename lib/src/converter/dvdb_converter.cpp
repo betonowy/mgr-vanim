@@ -1,6 +1,18 @@
 #include "dvdb_converter.hpp"
-#include <dvdb/dvdb_header.hpp>
+#include "dvdb_compressor.hpp"
+#include "dvdb_converter_nvdb.hpp"
+
+#include <dvdb/common.hpp>
+#include <dvdb/compression.hpp>
+#include <dvdb/dct.hpp>
+#include <dvdb/derivative.hpp>
+#include <dvdb/rotate.hpp>
+#include <dvdb/statistics.hpp>
+#include <dvdb/transform.hpp>
+#include <dvdb/types.hpp>
+
 #include <utils/nvdb_mmap.hpp>
+#include <utils/thread_pool.hpp>
 
 #include <nanovdb/PNanoVDB.h>
 
@@ -9,9 +21,24 @@
 #include <fstream>
 #include <numeric>
 
-#include <immintrin.h>
+#include "../test/dump.hpp"
 
-#include <dvdb/dvdb_rle.hpp>
+namespace converter
+{
+struct dvdb_state
+{
+    std::mutex status_mtx;
+    std::string status_string;
+
+    size_t read_size = 0;
+    size_t written_size = 0;
+
+    size_t leaves_total = 0;
+    size_t leaves_processed = 0;
+
+    std::vector<uint8_t> _vdb_buffer;
+};
+} // namespace converter
 
 namespace
 {
@@ -83,69 +110,284 @@ size_t vdb_get_actual_leaf_count(pnanovdb_buf_t buf, pnanovdb_tree_handle_t tree
     return count;
 }
 
-std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_state, void *final_state)
+struct encoder_context
 {
-    // Removing constness is absolutely OK, because data will not be modified there
-    const pnanovdb_buf_t src_buf{.data = reinterpret_cast<uint32_t *>(const_cast<void *>(src_state))};
-    const pnanovdb_buf_t dst_buf{.data = reinterpret_cast<uint32_t *>(const_cast<void *>(dst_state))};
-    const pnanovdb_buf_t final_buf{.data = reinterpret_cast<uint32_t *>(final_state)};
+    static constexpr size_t src_center_index = 13;
 
-    pnanovdb_grid_handle_t src_grid{}, dst_grid{}, final_grid{};
-    pnanovdb_tree_handle_t src_tree, dst_tree, final_tree;
+    dvdb::cube_888_mask *dst_mask, *final_mask, *src_neighborhood_masks[27];
+    dvdb::cube_888_f32 *dst, *final, *src_neighborhood[27], dst_fmask;
 
-    src_tree = pnanovdb_grid_get_tree(src_buf, src_grid);
-    dst_tree = pnanovdb_grid_get_tree(dst_buf, dst_grid);
+    uint8_t buffer[1024];
+    size_t written = 0;
+    uint64_t key;
+};
 
-    const auto src_leaf_count = pnanovdb_tree_get_node_count_leaf(src_buf, src_tree);
-    const auto dst_leaf_count = pnanovdb_tree_get_node_count_leaf(dst_buf, dst_tree);
+void vdb_encode(encoder_context *ctx, float max_error)
+{
+    static constexpr float FLOAT_MAX = std::numeric_limits<float>::max();
+    static constexpr dvdb::cube_888_f32 empty_values_f32{};
 
-    const auto dst_big_leaf_count = vdb_get_actual_leaf_count(dst_buf, dst_tree);
+    ctx->written = 0;
 
-    const auto src_leaf_offset = pnanovdb_tree_get_node_offset_leaf(src_buf, src_tree) + src_tree.address.byte_offset;
-    const auto dst_leaf_offset = pnanovdb_tree_get_node_offset_leaf(dst_buf, dst_tree) + dst_tree.address.byte_offset;
+    const auto write = [&](const auto &object) {
+        auto output = ctx->buffer + ctx->written;
+        std::copy_n(reinterpret_cast<const uint8_t *>(&object), sizeof(object), output);
+        ctx->written += sizeof(object);
+    };
+
+    // determine if copy is even needed
+    float error_empty = dvdb::mean_squared_error_with_mask(&empty_values_f32, ctx->dst, &ctx->dst_fmask);
+
+    glm::ivec3 rotation;
+
+    // rotated source copy
+    float error_rotation_only = dvdb::rotate_refill_find_astar(ctx->dst, {}, ctx->src_neighborhood, &rotation.x, &rotation.y, &rotation.z);
+
+    dvdb::cube_888_f32 rotated;
+    dvdb::cube_888_mask rotated_mask;
+
+    dvdb::rotate_refill(&rotated, ctx->src_neighborhood, rotation.x, rotation.y, rotation.z);
+    dvdb::rotate_refill(&rotated_mask, ctx->src_neighborhood_masks, rotation.x, rotation.y, rotation.z);
+
+    // if (error_rotation_only < max_error)
+    {
+        write(dvdb::code_points::setup{
+            .has_source = true,
+            .has_rotation = rotation != glm::ivec3(0),
+        });
+        write(dvdb::code_points::source_key{
+            ctx->key,
+        });
+
+        if (rotation != glm::ivec3(0))
+        {
+            write(dvdb::code_points::rotation_offset{
+                .x = static_cast<int16_t>(rotation.x),
+                .y = static_cast<int16_t>(rotation.y),
+                .z = static_cast<int16_t>(rotation.z),
+            });
+        }
+
+        *ctx->final = rotated;
+        *ctx->final_mask = rotated_mask;
+
+        return;
+    }
+
+    float add, mul;
+    dvdb::cube_888_f32 rotated_fma, rotated_fma_mask;
+
+    dvdb::linear_regression_with_mask(&rotated, ctx->dst, &add, &mul, &ctx->dst_fmask);
+    dvdb::fma(&rotated, &rotated_fma, add, mul);
+
+    float error_rotation_fma_only = dvdb::mean_squared_error_with_mask(&rotated_fma, ctx->dst, &ctx->dst_fmask);
+
+    if (error_rotation_fma_only < max_error)
+    {
+        write(dvdb::code_points::setup{
+            .has_source = true,
+            .has_rotation = rotation != glm::ivec3(0),
+            .has_fma = true,
+        });
+
+        write(dvdb::code_points::source_key{
+            ctx->key,
+        });
+
+        if (rotation != glm::ivec3(0))
+        {
+            write(dvdb::code_points::rotation_offset{
+                .x = static_cast<int16_t>(rotation.x),
+                .y = static_cast<int16_t>(rotation.y),
+                .z = static_cast<int16_t>(rotation.z),
+            });
+        }
+
+        write(dvdb::code_points::fma{
+            .add = add,
+            .multiply = mul,
+        });
+
+        *ctx->final = rotated_fma;
+        *ctx->final_mask = *ctx->dst_mask;
+
+        return;
+    }
+
+    dvdb::cube_888_i8 diff8;
+    dvdb::cube_888_f32 diff, diff_decoded;
+    float min, max, error_diff;
+    uint8_t quantization;
+
+    dvdb::sub(ctx->dst, &rotated_fma, &diff);
+
+    for (int i = 0x01; i <= 0xff; ++i)
+    {
+        quantization = i;
+
+        dvdb::encode_derivative_to_i8(&diff, &diff8, &max, &min, quantization);
+        dvdb::decode_derivative_from_i8(&diff8, &diff_decoded, max, min, quantization);
+        error_diff = dvdb::mean_squared_error_with_mask(&diff_decoded, ctx->dst, &ctx->dst_fmask);
+
+        if (error_diff <= max_error)
+        {
+            break;
+        }
+    }
+
+    // last crucial step
+    {
+        write(dvdb::code_points::setup{
+            .has_source = true,
+            .has_rotation = rotation != glm::ivec3(0),
+            .has_fma = true,
+            .has_values = true,
+            .has_diff = true,
+            .has_derivative = true,
+            .has_map = true,
+        });
+
+        write(dvdb::code_points::source_key{
+            ctx->key,
+        });
+
+        if (rotation != glm::ivec3(0))
+        {
+            write(dvdb::code_points::rotation_offset{
+                .x = static_cast<int16_t>(rotation.x),
+                .y = static_cast<int16_t>(rotation.y),
+                .z = static_cast<int16_t>(rotation.z),
+            });
+        }
+
+        write(dvdb::code_points::fma{
+            .add = add,
+            .multiply = mul,
+        });
+
+        write(dvdb::code_points::quantization{
+            quantization,
+        });
+
+        write(dvdb::code_points::map{
+            .min = min,
+            .max = max,
+        });
+
+        write(diff8);
+
+        *ctx->final = diff_decoded;
+        *ctx->final_mask = *ctx->dst_mask;
+    }
+}
+
+std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_state, void *final_state, converter::dvdb_state *state, std::shared_ptr<utils::thread_pool> thread_pool)
+{
+    static constexpr float max_error_base = 0.01f;
+
+    converter::nvdb_reader src_reader, dst_reader, final_reader;
+    // encoder_context ctx;
+
+    src_reader.initialize(const_cast<void *>(src_state));
+    dst_reader.initialize(const_cast<void *>(dst_state));
+    final_reader.initialize(final_state);
+
+    state->leaves_total = dst_reader.leaf_count();
+    state->leaves_processed = 0;
 
     std::vector<uint8_t> output_data;
 
-    auto push_bytes = [&output_data](void *data, size_t size) {
-        uint8_t *bytes = static_cast<uint8_t *>(data);
+    dvdb::cube_888_f32 empty_values{};
+    dvdb::cube_888_mask empty_mask{};
 
-        for (size_t i = 0; i < size; ++i)
-        {
-            output_data.push_back(bytes[i]);
-        }
-    };
+    float min = 1e12, max = -1e12;
 
-    for (uint32_t i = 0; i < dst_leaf_count; ++i)
     {
-        dvdb::code_desc desc = {
-            .src_leaf = 0,
-            .dst_leaf = i,
-            .min = 0,
-            .max = 1,
-        };
-
-        float *floats = (float *)dst_buf.data + ((dst_leaf_offset + pnanovdb_grid_type_constants[PNANOVDB_GRID_TYPE_FLOAT].leaf_off_table + pnanovdb_grid_type_constants[PNANOVDB_GRID_TYPE_FLOAT].leaf_size * i) >> 2);
-
-        dvdb::rle_diff_code code;
-
-        std::memcpy(code.values, floats, sizeof(code.values));
-
-        push_bytes(&desc, sizeof(desc));
-        push_bytes(&code, sizeof(code));
+        std::lock_guard lock(state->status_mtx);
+        state->status_string = "Adjusting expected error...";
     }
 
-    return output_data;
-} // namespace
+    for (int i = 0; i < dst_reader.leaf_count(); ++i)
+    {
+        const auto leaf_data = dst_reader.leaf_table_ptr(i);
 
+        for (int j = 0; j < std::size(leaf_data->values); ++j)
+        {
+            const auto value = leaf_data->values[j];
+
+            if (value < min)
+            {
+                min = value;
+            }
+
+            if (value > max)
+            {
+                max = value;
+            }
+        }
+
+        ++state->leaves_processed;
+    }
+
+    state->leaves_total = dst_reader.leaf_count();
+    state->leaves_processed = 0;
+
+    {
+        std::lock_guard lock(state->status_mtx);
+        state->status_string = "Dispatching leaf data processing...";
+    }
+
+    float max_error = max_error_base * max_error_base * (max - min);
+
+    std::vector<encoder_context> thread_contexts(dst_reader.leaf_count());
+    std::vector<std::future<void>> work_finished(dst_reader.leaf_count());
+
+    for (int i = 0; i < dst_reader.leaf_count(); ++i)
+    {
+        auto &ctx = thread_contexts[i];
+
+        ctx.dst_mask = dst_reader.leaf_bitmask_ptr(i);
+        ctx.dst = dst_reader.leaf_table_ptr(i);
+        ctx.dst_fmask = ctx.dst_mask->as_values<float, 1, 0>();
+
+        ctx.final_mask = final_reader.leaf_bitmask_ptr(i);
+        ctx.final = final_reader.leaf_table_ptr(i);
+        ctx.key = dst_reader.leaf_key(i);
+
+        src_reader.leaf_neighbors(dst_reader.leaf_coord(i), ctx.src_neighborhood, ctx.src_neighborhood_masks, &empty_values, &empty_mask);
+
+        thread_pool->enqueue([ctx_ptr = &ctx, max_error]() { vdb_encode(ctx_ptr, max_error); });
+
+        vdb_encode(&ctx, max_error);
+
+        std::copy_n(ctx.buffer, ctx.written, std::back_inserter(output_data));
+
+        ++state->leaves_processed;
+    }
+
+    {
+        std::lock_guard lock(state->status_mtx);
+        state->status_string = "Main thread joined data processing workers...";
+    }
+
+    {
+        std::lock_guard lock(state->status_mtx);
+        state->status_string = "Finished! Acquiring processed data...";
+    }
+
+    for (;;)
+    {
+
+    }
+
+        state->leaves_total = 0;
+
+    return output_data;
+}
 } // namespace
 
 namespace converter
 {
-struct dvdb_state
-{
-    std::vector<uint8_t> _vdb_buffer;
-};
-
 dvdb_converter::dvdb_converter(std::shared_ptr<utils::thread_pool> pool)
     : _thread_pool(std::move(pool)), _state(std::make_unique<dvdb_state>())
 {
@@ -153,17 +395,32 @@ dvdb_converter::dvdb_converter(std::shared_ptr<utils::thread_pool> pool)
 
 dvdb_converter::~dvdb_converter() = default;
 
+std::string dvdb_converter::current_step()
+{
+    std::lock_guard lock(_state->status_mtx);
+    return _state->status_string;
+}
+
+void dvdb_converter::set_status(std::string str)
+{
+    std::lock_guard lock(_state->status_mtx);
+    _state->status_string = std::move(str);
+}
+
 void dvdb_converter::create_keyframe(std::filesystem::path path)
 {
+    set_status("Rewriting keyframe:\n  " + path.string());
+
     utils::nvdb_mmap nvdb_mmap(path.string());
+    _state->read_size += nvdb_mmap.mem_size();
 
     auto dvdb_path = path;
     dvdb_path.replace_extension(".dvdb");
 
     {
-        dvdb::header header = {
+        dvdb::headers::main header = {
             .magic = dvdb::MAGIC_NUMBER,
-            .frame_type = dvdb::frame_type_e::KEY_FRAME,
+            .frame_type = dvdb::headers::main::frame_type_e::KEY_FRAME,
             .vdb_grid_count = nvdb_mmap.grids().size(),
             .vdb_required_size = sizeof(header),
             .frames = {},
@@ -191,11 +448,13 @@ void dvdb_converter::create_keyframe(std::filesystem::path path)
         }
     }
 
+    set_status("Verifying:\n  " + dvdb_path.string());
+
     // Briefly verify contents and update current state
     {
         mio::mmap_source input(dvdb_path.string());
 
-        const auto header = reinterpret_cast<const dvdb::header *>(input.data());
+        const auto header = reinterpret_cast<const dvdb::headers::main *>(input.data());
 
         if (header->magic != dvdb::MAGIC_NUMBER)
         {
@@ -232,20 +491,27 @@ void dvdb_converter::create_keyframe(std::filesystem::path path)
 
         std::memcpy(_state->_vdb_buffer.data(), input.data(), input.size());
     }
+
+    set_status("Compressing (LZ4):  \n" + dvdb_path.string());
+
+    _state->written_size += pack_file(dvdb_path.c_str());
 }
 
 void dvdb_converter::add_diff_frame(std::filesystem::path path)
 {
+    set_status("Processing interframe:\n  " + path.string());
+
     utils::nvdb_mmap nvdb_mmap(path.string());
+    _state->read_size += nvdb_mmap.mem_size();
 
     auto dvdb_path = path;
     dvdb_path.replace_extension(".dvdb");
 
-    const auto current_state_header = reinterpret_cast<const dvdb::header *>(_state->_vdb_buffer.data());
+    const auto current_state_header = reinterpret_cast<const dvdb::headers::main *>(_state->_vdb_buffer.data());
 
-    dvdb::header next_state_header = {
+    dvdb::headers::main next_state_header = {
         .magic = dvdb::MAGIC_NUMBER,
-        .frame_type = dvdb::frame_type_e::DIFF_FRAME,
+        .frame_type = dvdb::headers::main::frame_type_e::DIFF_FRAME,
         .vdb_grid_count = current_state_header->vdb_grid_count,
         .vdb_required_size = sizeof(next_state_header),
         .frames = {}};
@@ -279,12 +545,14 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
         const auto destination_state_ptr = grid.ptr;
         const auto diff_state_ptr = next_buffer.data() + next_state_header.frames[i].base_tree_offset_start;
 
-        diff_data_chunks.emplace_back(vdb_create_rle_diff(source_state_ptr, destination_state_ptr, diff_state_ptr));
+        set_status("Creating diff (grid " + std::to_string(i) + ")\n  " + dvdb_path.string());
+
+        diff_data_chunks.emplace_back(vdb_create_rle_diff(source_state_ptr, destination_state_ptr, diff_state_ptr, _state.get()));
     }
 
-    // reallign data for storage
+    set_status("Realigning data\n  " + dvdb_path.string());
 
-    dvdb::header compressed_header = next_state_header;
+    dvdb::headers::main compressed_header = next_state_header;
 
     uint64_t compressed_base_tree_offset = sizeof(compressed_header);
 
@@ -312,12 +580,16 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
 
         output.write(reinterpret_cast<const char *>(&compressed_header), sizeof(compressed_header));
 
+        set_status("Writing grids\n  " + dvdb_path.string());
+
         for (size_t i = 0; i < nvdb_mmap.grids().size(); ++i)
         {
             const auto &grid = nvdb_mmap.grids()[i];
 
             output.write(reinterpret_cast<const char *>(grid.ptr), compressed_header.frames[i].base_tree_copy_size);
         }
+
+        set_status("Writing diffs\n  " + dvdb_path.string());
 
         for (size_t i = 0; i < diff_data_chunks.size(); ++i)
         {
@@ -326,179 +598,30 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
     }
 
     _state->_vdb_buffer = std::move(next_buffer);
+
+    set_status("Compressing (LZ4):  \n" + dvdb_path.string());
+
+    _state->written_size += pack_file(dvdb_path.c_str());
 }
 
-//
-//
-//
-
-namespace
+float dvdb_converter::current_compression_ratio()
 {
-using namespace converter;
-
-static constexpr auto PNANOVDB_LEAF_TABLE_COUNT_AVX2 = PNANOVDB_LEAF_TABLE_COUNT / 8;
-
-struct pnanovdb_grid_diff
-{
-    uint32_t src_leaf, dst_leaf;
-    __m256 values[PNANOVDB_LEAF_TABLE_COUNT_AVX2];
-};
-
-int calculate_diff_avx2(const __m256 *src, const __m256 *dst, __m256 *diff)
-{
-    const __m256 zeros = _mm256_setzero_ps();
-    int bits_set_count = 0;
-
-    for (size_t i = 0; i < PNANOVDB_LEAF_TABLE_COUNT_AVX2; ++i)
+    if (_state->written_size == 0)
     {
-        diff[i] = _mm256_sub_ps(dst[i], src[i]);
-
-        const auto cmp = _mm256_cmp_ps(diff[i], zeros, _CMP_EQ_UQ);
-
-        alignas(decltype(cmp)) float cmp_out[8];
-
-        _mm256_store_ps(cmp_out, cmp);
-
-        for (int i = 0; i < 8; ++i)
-        {
-            bits_set_count += cmp_out[i] != 0;
-        }
+        return 0;
     }
 
-    return bits_set_count;
+    return static_cast<float>(_state->read_size) / _state->written_size;
 }
 
-void create_grid_diff(pnanovdb_buf_t src_buf, pnanovdb_buf_t dst_buf)
+size_t dvdb_converter::current_total_leaves()
 {
-    pnanovdb_grid_handle_t src_grid{}, dst_grid{}; // Zero initialized is ok, because buffers are aligned that way
-    pnanovdb_grid_type_t grid_type = pnanovdb_grid_get_grid_type(src_buf, src_grid);
-
-    if (pnanovdb_grid_get_magic(src_buf, src_grid) != PNANOVDB_MAGIC_NUMBER)
-    {
-        throw std::runtime_error("Corrupted source grid.");
-    }
-
-    if (pnanovdb_grid_get_magic(dst_buf, dst_grid) != PNANOVDB_MAGIC_NUMBER)
-    {
-        throw std::runtime_error("Corrupted destination grid.");
-    }
-
-    if (grid_type != pnanovdb_grid_get_grid_type(dst_buf, dst_grid) || grid_type == PNANOVDB_GRID_TYPE_FPN)
-    {
-        throw std::runtime_error("Unsupported or incompatible grid types");
-    }
-
-    pnanovdb_tree_handle_t src_tree, dst_tree;
-
-    src_tree = pnanovdb_grid_get_tree(src_buf, src_grid);
-    dst_tree = pnanovdb_grid_get_tree(dst_buf, dst_grid);
-
-    pnanovdb_root_handle_t src_root, dst_root;
-
-    src_root = pnanovdb_tree_get_root(src_buf, src_tree);
-    dst_root = pnanovdb_tree_get_root(dst_buf, dst_tree);
-
-    pnanovdb_readaccessor_t src_acc, dst_acc;
-
-    pnanovdb_readaccessor_init(&src_acc, src_root);
-    pnanovdb_readaccessor_init(&dst_acc, dst_root);
-
-    pnanovdb_uint64_t src_leaves_offset, dst_leaves_offset;
-    pnanovdb_uint32_t src_leaves_count, dst_leaves_count;
-
-    src_leaves_offset = pnanovdb_tree_get_node_offset_leaf(src_buf, src_tree);
-    dst_leaves_offset = pnanovdb_tree_get_node_offset_leaf(dst_buf, dst_tree);
-
-    src_leaves_count = pnanovdb_tree_get_node_count_leaf(src_buf, src_tree);
-    dst_leaves_count = pnanovdb_tree_get_node_count_leaf(dst_buf, dst_tree);
-
-    std::vector<pnanovdb_leaf_handle_t> src_leaf_handles;
-    std::vector<pnanovdb_leaf_handle_t> dst_leaf_handles;
-
-    src_leaf_handles.reserve(src_leaves_count);
-    dst_leaf_handles.reserve(dst_leaves_count);
-
-    pnanovdb_uint32_t leaf_size = PNANOVDB_GRID_TYPE_GET(grid_type, leaf_size);
-
-    for (size_t i = 0; i < src_leaves_count; ++i)
-    {
-        src_leaf_handles.emplace_back(pnanovdb_leaf_handle_t{leaf_size * i + src_leaves_offset});
-    }
-
-    for (size_t i = 0; i < dst_leaves_count; ++i)
-    {
-        dst_leaf_handles.emplace_back(pnanovdb_leaf_handle_t{leaf_size * i + dst_leaves_offset});
-    }
-
-    for (size_t i = 0; i < dst_leaf_handles.size(); ++i)
-    {
-        const auto dst_table_offset = pnanovdb_leaf_get_table_address(grid_type, dst_buf, dst_leaf_handles[i], 0);
-        const auto dst_table_u32_ptr = dst_buf.data + (dst_table_offset.byte_offset >> 2);
-
-        __m256 dst_values[PNANOVDB_LEAF_TABLE_COUNT_AVX2];
-        std::memcpy(dst_values, dst_table_u32_ptr, sizeof(dst_values));
-
-        int best_src_leaf = -1;
-        int best_src_leaf_zeros = -1;
-
-        for (size_t j = 0; j < src_leaf_handles.size(); ++j)
-        {
-            const auto src_table_offset = pnanovdb_leaf_get_table_address(grid_type, src_buf, src_leaf_handles[j], 0);
-            const auto src_table_u32_ptr = src_buf.data + (src_table_offset.byte_offset >> 2);
-
-            __m256 src_values[PNANOVDB_LEAF_TABLE_COUNT_AVX2];
-            std::memcpy(src_values, src_table_u32_ptr, sizeof(src_values));
-
-            __m256 diff_values[PNANOVDB_LEAF_TABLE_COUNT_AVX2];
-
-            int zeros = calculate_diff_avx2(src_values, dst_values, diff_values);
-
-            if (zeros > best_src_leaf_zeros)
-            {
-                best_src_leaf = j;
-                best_src_leaf_zeros = zeros;
-            }
-        }
-    }
+    return _state->leaves_total;
 }
-} // namespace
 
-namespace converter
+size_t dvdb_converter::current_processed_leaves()
 {
-conversion_result create_nvdb_diff(std::filesystem::path src, std::filesystem::path dst)
-{
-    utils::nvdb_mmap src_mmap(src.string()), dst_mmap(dst.string());
-
-    if (src_mmap.grids().size() != dst_mmap.grids().size())
-    {
-        throw std::runtime_error("NanoVDB files have different number of grids.");
-    }
-
-    std::vector<uint32_t> src_buf, dst_buf;
-    static constexpr auto buf_value_type_sizeof = sizeof(decltype(src_buf)::value_type);
-
-    for (size_t i = 0; i < src_mmap.grids().size(); ++i)
-    {
-        const auto &src_grid = src_mmap.grids()[i];
-        const auto &dst_grid = dst_mmap.grids()[i];
-
-        src_buf.clear(), dst_buf.clear();
-
-        src_buf.resize(src_grid.size / buf_value_type_sizeof);
-        dst_buf.resize(dst_grid.size / buf_value_type_sizeof);
-
-        std::memcpy(src_buf.data(), src_grid.ptr, src_grid.size);
-        std::memcpy(dst_buf.data(), dst_grid.ptr, dst_grid.size);
-
-        pnanovdb_buf_t src_buf_handle, dst_buf_handle;
-
-        src_buf_handle.data = src_buf.data();
-        dst_buf_handle.data = dst_buf.data();
-
-        create_grid_diff(src_buf_handle, dst_buf_handle);
-    }
-
-    return {};
+    return _state->leaves_processed;
 }
-} // namespace converter
+
 } // namespace converter

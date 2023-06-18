@@ -36,8 +36,8 @@ float mean_squared_error(const cube_888_f32 *a, const cube_888_f32 *b)
 #pragma GCC unroll 64
     for (int i = 0; i < std::size(a->values); i += 8)
     {
-        __m256 ymm_a = _mm256_load_ps(a->values + i);
-        __m256 ymm_b = _mm256_load_ps(b->values + i);
+        __m256 ymm_a = _mm256_loadu_ps(a->values + i);
+        __m256 ymm_b = _mm256_loadu_ps(b->values + i);
         __m256 ymm_diff = _mm256_sub_ps(ymm_a, ymm_b);
 
         ymm_mse = _mm256_add_ps(ymm_mse, _mm256_mul_ps(ymm_diff, ymm_diff));
@@ -55,9 +55,9 @@ float mean_squared_error_with_mask(const cube_888_f32 *a, const cube_888_f32 *b,
 #pragma GCC unroll 64
     for (int i = 0; i < std::size(a->values); i += 8)
     {
-        __m256 ymm_mask = _mm256_load_ps(mask->values + i);
-        __m256 ymm_a = _mm256_load_ps(a->values + i);
-        __m256 ymm_b = _mm256_load_ps(b->values + i);
+        __m256 ymm_mask = _mm256_loadu_ps(mask->values + i);
+        __m256 ymm_a = _mm256_loadu_ps(a->values + i);
+        __m256 ymm_b = _mm256_loadu_ps(b->values + i);
         __m256 ymm_diff = _mm256_mul_ps(_mm256_sub_ps(ymm_a, ymm_b), ymm_mask);
 
         ymm_mse = _mm256_add_ps(ymm_mse, _mm256_mul_ps(ymm_diff, ymm_diff));
@@ -73,7 +73,7 @@ float accumulate(const cube_888_f32 *src)
 #pragma GCC unroll 64
     for (int i = 0; i < std::size(src->values); i += 8)
     {
-        __m256 ymm_src = _mm256_load_ps(src->values + i);
+        __m256 ymm_src = _mm256_loadu_ps(src->values + i);
         ymm_acc = _mm256_add_ps(ymm_acc, ymm_src);
     }
 
@@ -99,8 +99,8 @@ void linear_regression(const cube_888_f32 *x, const cube_888_f32 *y, float *add,
 #pragma GCC unroll 64
     for (int i = 0; i < std::size(x->values); i += 8)
     {
-        __m256 ymm_x = _mm256_load_ps(x->values + i);
-        __m256 ymm_y = _mm256_load_ps(y->values + i);
+        __m256 ymm_x = _mm256_loadu_ps(x->values + i);
+        __m256 ymm_y = _mm256_loadu_ps(y->values + i);
 
         __m256 ymm_diff_x = _mm256_sub_ps(ymm_x, ymm_x_mean);
         __m256 ymm_diff_y = _mm256_sub_ps(ymm_y, ymm_y_mean);
@@ -138,8 +138,8 @@ void linear_regression_with_mask(const cube_888_f32 *x, const cube_888_f32 *y, f
 #pragma GCC unroll 64
     for (int i = 0; i < std::size(masked_x.values); i += 8)
     {
-        __m256 ymm_x = _mm256_load_ps(masked_x.values + i);
-        __m256 ymm_y = _mm256_load_ps(masked_y.values + i);
+        __m256 ymm_x = _mm256_loadu_ps(masked_x.values + i);
+        __m256 ymm_y = _mm256_loadu_ps(masked_y.values + i);
 
         __m256 ymm_diff_x = _mm256_sub_ps(ymm_x, ymm_x_mean);
         __m256 ymm_diff_y = _mm256_sub_ps(ymm_y, ymm_y_mean);

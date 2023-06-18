@@ -34,6 +34,11 @@ public:
 
     std::vector<std::string> grid_names() const;
 
+    size_t mem_size() const
+    {
+        return _source.size();
+    }
+
 private:
     std::vector<grid> _grids;
     mio::mmap_source _source;

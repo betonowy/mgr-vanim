@@ -36,7 +36,7 @@ struct cube_888_mask
     std::bitset<512> values;
 
     template <typename T, auto A, auto I>
-    cube_888<T> as_values()
+    cube_888<T> as_values() const
     {
         cube_888<T> out;
 
@@ -60,10 +60,10 @@ struct main
         DIFF_FRAME,
     };
 
-    uint64_t magic;             // DiffVDB
-    frame_type_e frame_type;    // key and diff frames
-    uint64_t vdb_grid_count;    // how many grids in this file
-    uint64_t vdb_required_size; // how much data to allocate for final vsb
+    uint64_t magic = MAGIC_NUMBER; // DiffVDB
+    frame_type_e frame_type;       // key and diff frames
+    uint64_t vdb_grid_count;       // how many grids in this file
+    uint64_t vdb_required_size;    // how much data to allocate for final vsb
 
     struct
     {
@@ -76,9 +76,8 @@ struct main
 
 struct block_description
 {
-    uint32_t dct_data_start_offset;
-    uint32_t dct_data_compressed_size;
-    uint32_t dct_data_uncompressed_size;
+    uint64_t dct_data_compressed_size;
+    uint64_t dct_data_uncompressed_size;
 };
 } // namespace headers
 
@@ -89,7 +88,11 @@ struct setup
     bool has_source : 1;
     bool has_rotation : 1;
     bool has_fma : 1;
+    bool has_values : 1;
+    bool has_diff : 1;
+    bool has_derivative : 1;
     bool has_dct : 1;
+    bool has_map : 1;
 };
 
 struct rotation_offset
@@ -97,37 +100,24 @@ struct rotation_offset
     int16_t x : 5;
     int16_t y : 5;
     int16_t z : 5;
-
-    int n_post_copy()
-    {
-        int i = 0;
-
-        if (x != 0)
-        {
-            ++i;
-        }
-
-        if (y != 0)
-        {
-            ++i;
-        }
-
-        if (z != 0)
-        {
-            ++i;
-        }
-
-        return i;
-    }
 };
 
-struct rotation_fma
+struct fma
 {
     float add, multiply;
 };
 
+struct map
+{
+    float min, max;
+};
+
+struct quantization
+{
+    uint8_t value;
+};
+
 using source_key = uint64_t;
-using dct_index = uint32_t;
-using dct_fma = rotation_fma;
+// using dct_index = uint32_t;
 } // namespace code_points
 } // namespace dvdb

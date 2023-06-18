@@ -6,8 +6,6 @@
 
 TEST_CASE("cube888_dct_coord_test_f32")
 {
-    dvdb::transform_init();
-
     dvdb::cube_888_f32 src, dst, src_bis;
 
     for (int i = 0; i < std::size(src.values); ++i)
@@ -24,8 +22,6 @@ TEST_CASE("cube888_dct_coord_test_f32")
 
 TEST_CASE("cube888_dct_coord_test_i8")
 {
-    dvdb::transform_init();
-
     dvdb::cube_888_i8 src, dst, src_bis;
 
     for (int i = 0; i < std::size(src.values); ++i)

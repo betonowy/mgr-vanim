@@ -22,7 +22,7 @@ private:
 
     std::mutex _state_modification_mtx;
 
-    std::vector<uint8_t> _current_state;
-    std::vector<uint8_t> _created_state;
+    std::vector<char> _current_state;
+    std::vector<char> _created_state;
 };
 } // namespace objects::vdb

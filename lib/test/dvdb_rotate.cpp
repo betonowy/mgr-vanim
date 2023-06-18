@@ -167,8 +167,15 @@ constexpr int index_to_z(int i)
 TEST_CASE("no_rotation")
 {
     dvdb::cube_888_f32 cubes[27], dst;
+    dvdb::cube_888_f32 *cube_ptrs[27];
+
+    for (int i = 0; i < 27; ++i)
+    {
+        cube_ptrs[i] = cubes + i;
+    }
+
     make_cubes(cubes, std::size(cubes));
-    dvdb::rotate_refill(&dst, cubes, 0, 0, 0);
+    dvdb::rotate_refill(&dst, cube_ptrs, 0, 0, 0);
 
     for (int i = 0; i < std::size(cubes->values); ++i)
     {
@@ -179,9 +186,16 @@ TEST_CASE("no_rotation")
 TEST_CASE("x_only")
 {
     dvdb::cube_888_f32 cubes[27], dst;
+    dvdb::cube_888_f32 *cube_ptrs[27];
+
+    for (int i = 0; i < 27; ++i)
+    {
+        cube_ptrs[i] = cubes + i;
+    }
+
     make_cubes(cubes, std::size(cubes));
 
-    dvdb::rotate_refill(&dst, cubes, 1, 0, 0);
+    dvdb::rotate_refill(&dst, cube_ptrs, 1, 0, 0);
 
     for (int i = 0; i < std::size(dst.values); ++i)
     {
@@ -189,7 +203,7 @@ TEST_CASE("x_only")
         REQUIRE(static_cast<int>(dst.values[i] / 1000) == (x == 0 ? 12 : 13));
     }
 
-    dvdb::rotate_refill(&dst, cubes, -1, 0, 0);
+    dvdb::rotate_refill(&dst, cube_ptrs, -1, 0, 0);
 
     for (int i = 0; i < std::size(dst.values); ++i)
     {
@@ -201,9 +215,16 @@ TEST_CASE("x_only")
 TEST_CASE("y_only")
 {
     dvdb::cube_888_f32 cubes[27], dst;
+    dvdb::cube_888_f32 *cube_ptrs[27];
+
+    for (int i = 0; i < 27; ++i)
+    {
+        cube_ptrs[i] = cubes + i;
+    }
+
     make_cubes(cubes, std::size(cubes));
 
-    dvdb::rotate_refill(&dst, cubes, 0, 1, 0);
+    dvdb::rotate_refill(&dst, cube_ptrs, 0, 1, 0);
 
     for (int i = 0; i < std::size(dst.values); ++i)
     {
@@ -211,7 +232,7 @@ TEST_CASE("y_only")
         REQUIRE(static_cast<int>(dst.values[i] / 1000) == (y == 0 ? 10 : 13));
     }
 
-    dvdb::rotate_refill(&dst, cubes, 0, -1, 0);
+    dvdb::rotate_refill(&dst, cube_ptrs, 0, -1, 0);
 
     for (int i = 0; i < std::size(dst.values); ++i)
     {
@@ -223,9 +244,16 @@ TEST_CASE("y_only")
 TEST_CASE("z_only")
 {
     dvdb::cube_888_f32 cubes[27], dst;
+    dvdb::cube_888_f32 *cube_ptrs[27];
+
+    for (int i = 0; i < 27; ++i)
+    {
+        cube_ptrs[i] = cubes + i;
+    }
+
     make_cubes(cubes, std::size(cubes));
 
-    dvdb::rotate_refill(&dst, cubes, 0, 0, 1);
+    dvdb::rotate_refill(&dst, cube_ptrs, 0, 0, 1);
 
     for (int i = 0; i < std::size(dst.values); ++i)
     {
@@ -233,7 +261,7 @@ TEST_CASE("z_only")
         REQUIRE(static_cast<int>(dst.values[i] / 1000) == (z == 0 ? 4 : 13));
     }
 
-    dvdb::rotate_refill(&dst, cubes, 0, 0, -1);
+    dvdb::rotate_refill(&dst, cube_ptrs, 0, 0, -1);
 
     for (int i = 0; i < std::size(dst.values); ++i)
     {
@@ -245,9 +273,16 @@ TEST_CASE("z_only")
 TEST_CASE("xyz_corner")
 {
     dvdb::cube_888_f32 cubes[27], dst;
+    dvdb::cube_888_f32 *cube_ptrs[27];
+
+    for (int i = 0; i < 27; ++i)
+    {
+        cube_ptrs[i] = cubes + i;
+    }
+
     make_cubes(cubes, std::size(cubes));
 
-    dvdb::rotate_refill(&dst, cubes, 8, 8, 8);
+    dvdb::rotate_refill(&dst, cube_ptrs, 8, 8, 8);
 
     for (int i = 0; i < std::size(dst.values); ++i)
     {
@@ -255,7 +290,7 @@ TEST_CASE("xyz_corner")
         REQUIRE(static_cast<int>(dst.values[i] / 1000) == 0);
     }
 
-    dvdb::rotate_refill(&dst, cubes, -8, -8, -8);
+    dvdb::rotate_refill(&dst, cube_ptrs, -8, -8, -8);
 
     for (int i = 0; i < std::size(dst.values); ++i)
     {
@@ -287,66 +322,137 @@ static constexpr void *vdb_deref(pnanovdb_address_t address, pnanovdb_buf_t buf)
     return buf.data + (address.byte_offset >> 2);
 }
 
-// TEST_CASE("Gradient rotation")
-// {
-//     static constexpr glm::vec3 high_coord{24.f, 25.f, 26.f};
-//     dvdb::cube_888_f32 cubes[27], rotated;
+TEST_CASE("Gradient rotation")
+{
+    static constexpr glm::vec3 high_coord{24.f, 25.f, 26.f};
+    dvdb::cube_888_f32 cubes[27], rotated;
+    dvdb::cube_888_f32 *cube_ptrs[27];
 
-//     for (int i = -1; i <= 1; ++i)
-//     {
-//         for (int j = -1; j <= 1; ++j)
-//         {
-//             for (int k = -1; k <= 1; ++k)
-//             {
-//                 const auto index = coord_to_neighbor_index(i, j, k);
+    for (int i = 0; i < 27; ++i)
+    {
+        cube_ptrs[i] = cubes + i;
+    }
 
-//                 for (int x = 0; x < 8; ++x)
-//                 {
-//                     for (int y = 0; y < 8; ++y)
-//                     {
-//                         for (int z = 0; z < 8; ++z)
-//                         {
-//                             const auto cube_index = x + (y << 3) + (z << 6);
+    for (int i = -1; i <= 1; ++i)
+    {
+        for (int j = -1; j <= 1; ++j)
+        {
+            for (int k = -1; k <= 1; ++k)
+            {
+                const auto index = coord_to_neighbor_index(i, j, k);
 
-//                             glm::vec3 vcoord = (glm::vec3(i, j, k) + 1.f) * 8.f + glm::vec3(x, y, z);
+                for (int x = 0; x < 8; ++x)
+                {
+                    for (int y = 0; y < 8; ++y)
+                    {
+                        for (int z = 0; z < 8; ++z)
+                        {
+                            const auto cube_index = x + (y << 3) + (z << 6);
 
-//                             cubes[index].values[cube_index] = glm::length(vcoord) / glm::length(high_coord);
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
+                            glm::vec3 vcoord = (glm::vec3(i, j, k) + 1.f) * 8.f + glm::vec3(x, y, z);
 
-//     for (int i = 0; i <= 16; ++i)
-//     {
-//         for (int j = 0; j <= 16; ++j)
-//         {
-//             for (int k = 0; k <= 16; ++k)
-//             {
-//                 const auto index = coord_to_neighbor_index(i, j, k);
+                            cubes[index].values[cube_index] = glm::length(vcoord) / glm::length(high_coord);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
-//                 for (int x = 0; x < 8; ++x)
-//                 {
-//                     for (int y = 0; y < 8; ++y)
-//                     {
-//                         for (int z = 0; z < 8; ++z)
-//                         {
-//                             const auto cube_index = x + (y << 3) + (z << 6);
+    for (int i = 0; i <= 16; ++i)
+    {
+        for (int j = 0; j <= 16; ++j)
+        {
+            for (int k = 0; k <= 16; ++k)
+            {
+                const auto index = coord_to_neighbor_index(i, j, k);
+                dvdb::rotate_refill(&rotated, cube_ptrs, -(i - 8), -(j - 8), -(k - 8));
 
-//                             glm::vec3 vcoord = glm::vec3(i, j, k) + glm::vec3(x, y, z);
-//                             float expected = glm::length(vcoord) / glm::length(high_coord);
+                for (int x = 0; x < 8; ++x)
+                {
+                    for (int y = 0; y < 8; ++y)
+                    {
+                        for (int z = 0; z < 8; ++z)
+                        {
+                            const auto cube_index = x + (y << 3) + (z << 6);
 
-//                             dvdb::rotate_refill(&rotated, cubes, -(i - 8), -(j - 8), -(k - 8));
+                            glm::vec3 vcoord = glm::vec3(i, j, k) + glm::vec3(x, y, z);
+                            float expected = glm::length(vcoord) / glm::length(high_coord);
 
-//                             REQUIRE(rotated.values[cube_index] == expected);
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
+                            REQUIRE(rotated.values[cube_index] == expected);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("Gradient rotation mask")
+{
+    static constexpr glm::vec3 high_coord{24.f, 25.f, 26.f};
+    dvdb::cube_888_mask cubes[27], rotated;
+    dvdb::cube_888_mask *cube_ptrs[27];
+
+    for (int i = 0; i < 27; ++i)
+    {
+        cube_ptrs[i] = cubes + i;
+    }
+
+    for (int i = -1; i <= 1; ++i)
+    {
+        for (int j = -1; j <= 1; ++j)
+        {
+            for (int k = -1; k <= 1; ++k)
+            {
+                const auto index = coord_to_neighbor_index(i, j, k);
+
+                for (int x = 0; x < 8; ++x)
+                {
+                    for (int y = 0; y < 8; ++y)
+                    {
+                        for (int z = 0; z < 8; ++z)
+                        {
+                            const auto cube_index = x + (y << 3) + (z << 6);
+
+                            glm::vec3 vcoord = (glm::vec3(i, j, k) + 1.f) * 8.f + glm::vec3(x, y, z);
+
+                            cubes[index].values[cube_index] = glm::fract((glm::length(vcoord))) < 0.5f;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i <= 16; ++i)
+    {
+        for (int j = 0; j <= 16; ++j)
+        {
+            for (int k = 0; k <= 16; ++k)
+            {
+                const auto index = coord_to_neighbor_index(i, j, k);
+                dvdb::rotate_refill(&rotated, cube_ptrs, -(i - 8), -(j - 8), -(k - 8));
+
+                for (int x = 0; x < 8; ++x)
+                {
+                    for (int y = 0; y < 8; ++y)
+                    {
+                        for (int z = 0; z < 8; ++z)
+                        {
+                            const auto cube_index = x + (y << 3) + (z << 6);
+
+                            glm::vec3 vcoord = glm::vec3(i, j, k) + glm::vec3(x, y, z);
+                            float expected = glm::fract((glm::length(vcoord))) < 0.5f;
+
+                            REQUIRE(rotated.values[cube_index] == expected);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 // TEST_CASE_METHOD(dvdb_init, "find_similars_astar_and_brute_force")
 // {
@@ -426,6 +532,13 @@ static constexpr void *vdb_deref(pnanovdb_address_t address, pnanovdb_buf_t buf)
 TEST_CASE_METHOD(dvdb_init, "find_similars_brute_force")
 {
     dvdb::cube_888_f32 cubes[27], dst;
+    dvdb::cube_888_f32 *cube_ptrs[27];
+
+    for (int i = 0; i < 27; ++i)
+    {
+        cube_ptrs[i] = cubes + i;
+    }
+
     dvdb::cube_888_mask mask;
 
     int w0 = 0, w1 = 0, w2 = 0;
@@ -530,8 +643,8 @@ TEST_CASE_METHOD(dvdb_init, "find_similars_brute_force")
                 dct_cubes.push_back(mid);
             }
 
-            dvdb::rotate_refill_find_astar(&dst, cubes, &rot.x, &rot.y, &rot.z);
-            dvdb::rotate_refill(&converted, cubes, rot.x, rot.y, rot.z);
+            dvdb::rotate_refill_find_astar(&dst, cubes, {}, &rot.x, &rot.y, &rot.z);
+            dvdb::rotate_refill(&converted, cube_ptrs, rot.x, rot.y, rot.z);
 
             // std::printf("best rotation: %d %d %d\n", rot.x, rot.y, rot.z);
 

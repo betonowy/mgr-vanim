@@ -60,9 +60,9 @@ void debug_window::update(scene::object_context &ctx, float delta_time)
             float copy_time_ms = utils::get_copy_time() * 1e-3;
             float flush_time_ms = utils::get_flush_time() * 1e-3;
 
-            ImGui::Text("Map time: %.3f ms", map_time_ms);
+            ImGui::Text("Map/Decompression time: %.3f ms", map_time_ms);
             ImGui::Text("Fence time: %.3f ms", fence_time_ms);
-            ImGui::Text("Copy time: %.3f ms", copy_time_ms);
+            ImGui::Text("Copy/Process time: %.3f ms", copy_time_ms);
             ImGui::Text("Flush time: %.3f ms", flush_time_ms);
         }
 

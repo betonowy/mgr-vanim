@@ -12,6 +12,4 @@ void transform_carthesian_to_hilbert(const cube_888_f32 *src, cube_888_f32 *dst)
 void transform_carthesian_to_hilbert(const cube_888_i8 *src, cube_888_i8 *dst);
 void transform_hilbert_to_carthesian(const cube_888_f32 *src, cube_888_f32 *dst);
 void transform_hilbert_to_carthesian(const cube_888_i8 *src, cube_888_i8 *dst);
-
-void transform_init();
 } // namespace dvdb

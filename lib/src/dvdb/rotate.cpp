@@ -12,6 +12,40 @@ namespace
 {
 constexpr auto INDEX_CENTER = 13;
 
+void rotate_internal(const cube_888_mask *src, cube_888_mask *dst, int ox, int oy, int oz)
+{
+    ox = -ox & 0b111;
+    oy &= 0b111;
+    oz &= 0b111;
+
+    auto cube8index = [](unsigned x, unsigned y, unsigned z) {
+        return x + 8 * y + 8 * 8 * z;
+    };
+
+    auto cube8index_wrapped = [](unsigned x, unsigned y, unsigned z) {
+        return ((x & 7) + 8 * (y & 7) + 8 * 8 * (z & 7));
+    };
+
+#pragma GCC unroll 8
+    for (int z = 0; z < 8; ++z)
+    {
+#pragma GCC unroll 8
+        for (int y = 0; y < 8; ++y)
+        {
+            auto input = ((uint8_t *)src) + cube8index(y, z, 0);
+            auto output = ((uint8_t *)dst) + cube8index_wrapped(y + oy, z + oz, 0);
+
+            uint8_t expected = *output;
+
+            uint16_t tmp = *input;
+            tmp |= tmp << 8 | tmp;
+            tmp >>= ox;
+
+            *output = tmp;
+        }
+    }
+}
+
 void rotate_internal(const cube_888_f32 *src, cube_888_f32 *dst, int ox, int oy, int oz)
 {
     ox = -ox & 0b111;
@@ -55,7 +89,7 @@ void rotate_internal(const cube_888_f32 *src, cube_888_f32 *dst, int ox, int oy,
             int index_in = y * 8 + z * 8 * 8;
             int index_out = ((y + oy) & 0b111) * 8 + ((z + oz) & 0b111) * 8 * 8;
 
-            __m256 row = _mm256_load_ps(src->values + index_in);
+            __m256 row = _mm256_loadu_ps(src->values + index_in);
             __m256 half_rotated = _mm256_permutevar_ps(row, permutation);
 
             __m128 half_rotated_low = _mm256_extractf128_ps(half_rotated, 0);
@@ -66,7 +100,7 @@ void rotate_internal(const cube_888_f32 *src, cube_888_f32 *dst, int ox, int oy,
 
             __m256 out = _mm256_set_m128(rotated_high, rotated_low);
 
-            _mm256_store_ps(dst->values + index_out, out);
+            _mm256_storeu_ps(dst->values + index_out, out);
         }
     }
 }
@@ -126,10 +160,29 @@ constexpr int min_value27(float values[27])
 }
 } // namespace
 
-float rotate_refill_find_astar(const cube_888_f32 *dst, const cube_888_f32 src[27], int *x, int *y, int *z)
+consteval dvdb::cube_888_f32 filled_cube(float value)
+{
+    dvdb::cube_888_f32 cube;
+
+    for (int i = 0; i < 512; ++i)
+    {
+        cube.values[i] = value;
+    }
+
+    return cube;
+}
+
+static constexpr dvdb::cube_888_f32 default_mask = filled_cube(1);
+
+float rotate_refill_find_astar(const cube_888_f32 *dst, const cube_888_f32 *dst_mask, cube_888_f32 *src[27], int *x, int *y, int *z)
 {
     cube_888_f32 test;
     float test_error[27];
+
+    if (!dst_mask)
+    {
+        dst_mask = &default_mask;
+    }
 
     *x = *y = *z = 0;
 
@@ -142,13 +195,13 @@ float rotate_refill_find_astar(const cube_888_f32 *dst, const cube_888_f32 src[2
             index_to_step_offset(i, &tx, &ty, &tz);
             rotate_refill(&test, src, tx + *x, ty + *y, tz + *z);
 
-            float pre_fma_error = mean_squared_error(&test, dst);
+            float pre_fma_error = mean_squared_error_with_mask(&test, dst, dst_mask);
 
             float add, mul;
             linear_regression(&test, dst, &add, &mul);
             fma(&test, &test, add, mul);
 
-            float post_fma_error = mean_squared_error(&test, dst);
+            float post_fma_error = mean_squared_error_with_mask(&test, dst, dst_mask);
 
             test_error[i] = std::min(pre_fma_error, post_fma_error);
         }
@@ -170,10 +223,15 @@ float rotate_refill_find_astar(const cube_888_f32 *dst, const cube_888_f32 src[2
     }
 }
 
-float rotate_refill_find_brute_force(const cube_888_f32 *dst, const cube_888_f32 src[27], int *x, int *y, int *z)
+float rotate_refill_find_brute_force(const cube_888_f32 *dst, const cube_888_f32 *dst_mask, cube_888_f32 *src[27], int *x, int *y, int *z)
 {
     cube_888_f32 test;
     float best = std::numeric_limits<float>::max();
+
+    if (!dst_mask)
+    {
+        dst_mask = &default_mask;
+    }
 
     *x = *y = *z = 0;
 
@@ -185,13 +243,13 @@ float rotate_refill_find_brute_force(const cube_888_f32 *dst, const cube_888_f32
             {
                 rotate_refill(&test, src, tx, ty, tz);
 
-                float pre_fma_error = mean_squared_error(&test, dst);
+                float pre_fma_error = mean_squared_error_with_mask(&test, dst, dst_mask);
 
                 float add, mul;
                 linear_regression(&test, dst, &add, &mul);
                 fma(&test, &test, add, mul);
 
-                float post_fma_error = mean_squared_error(&test, dst);
+                float post_fma_error = mean_squared_error_with_mask(&test, dst, dst_mask);
 
                 float error = std::min(pre_fma_error, post_fma_error);
 
@@ -206,8 +264,8 @@ float rotate_refill_find_brute_force(const cube_888_f32 *dst, const cube_888_f32
     return best;
 }
 
-template <int AX, int AY, int AZ>
-void range_copy(cube_888_f32 *dst, const cube_888_f32 *src, int x, int y, int z)
+template <int AX, int AY, int AZ, typename T>
+void range_copy(T *dst, const T *src, int x, int y, int z)
 {
     int sbx, sex, dbx, dex, sby, sey, dby, dey, sbz, sez, dbz, dez;
 
@@ -227,7 +285,8 @@ void range_copy(cube_888_f32 *dst, const cube_888_f32 *src, int x, int y, int z)
     }
 }
 
-void rotate_refill(cube_888_f32 *dst, const cube_888_f32 src[27], int x, int y, int z)
+template <typename T>
+void rotate_refill_impl(T *dst, T *src[27], int x, int y, int z)
 {
     auto dir_of = [](int v) { return v < 0 ? 1 : (v > 0 ? -1 : 0); };
 
@@ -237,45 +296,55 @@ void rotate_refill(cube_888_f32 *dst, const cube_888_f32 src[27], int x, int y, 
 
     if (x == 0 && y == 0 && z == 0)
     {
-        *dst = src[coords_to_neighbor_index(0, 0, 0)];
+        *dst = *src[coords_to_neighbor_index(0, 0, 0)];
         return;
     }
 
-    rotate_internal(src + coords_to_neighbor_index(0, 0, 0), dst, x, y, z);
+    rotate_internal(src[coords_to_neighbor_index(0, 0, 0)], dst, x, y, z);
 
     if (x != 0)
     {
-        range_copy<1, 0, 0>(dst, src + coords_to_neighbor_index(dir_x, 0, 0), x, y, z);
+        range_copy<1, 0, 0>(dst, src[coords_to_neighbor_index(dir_x, 0, 0)], x, y, z);
     }
 
     if (y != 0)
     {
-        range_copy<0, 1, 0>(dst, src + coords_to_neighbor_index(0, dir_y, 0), x, y, z);
+        range_copy<0, 1, 0>(dst, src[coords_to_neighbor_index(0, dir_y, 0)], x, y, z);
     }
 
     if (z != 0)
     {
-        range_copy<0, 0, 1>(dst, src + coords_to_neighbor_index(0, 0, dir_z), x, y, z);
+        range_copy<0, 0, 1>(dst, src[coords_to_neighbor_index(0, 0, dir_z)], x, y, z);
     }
 
     if (x != 0 && y != 0)
     {
-        range_copy<1, 1, 0>(dst, src + coords_to_neighbor_index(dir_x, dir_y, 0), x, y, z);
+        range_copy<1, 1, 0>(dst, src[coords_to_neighbor_index(dir_x, dir_y, 0)], x, y, z);
     }
 
     if (y != 0 && z != 0)
     {
-        range_copy<0, 1, 1>(dst, src + coords_to_neighbor_index(0, dir_y, dir_z), x, y, z);
+        range_copy<0, 1, 1>(dst, src[coords_to_neighbor_index(0, dir_y, dir_z)], x, y, z);
     }
 
     if (x != 0 && z != 0)
     {
-        range_copy<1, 0, 1>(dst, src + coords_to_neighbor_index(dir_x, 0, dir_z), x, y, z);
+        range_copy<1, 0, 1>(dst, src[coords_to_neighbor_index(dir_x, 0, dir_z)], x, y, z);
     }
 
     if (x != 0 && y != 0 && z != 0)
     {
-        range_copy<1, 1, 1>(dst, src + coords_to_neighbor_index(dir_x, dir_y, dir_z), x, y, z);
+        range_copy<1, 1, 1>(dst, src[coords_to_neighbor_index(dir_x, dir_y, dir_z)], x, y, z);
     }
+}
+
+void rotate_refill(cube_888_mask *dst, cube_888_mask *src[27], int x, int y, int z)
+{
+    rotate_refill_impl(dst, src, x, y, z);
+}
+
+void rotate_refill(cube_888_f32 *dst, cube_888_f32 *src[27], int x, int y, int z)
+{
+    rotate_refill_impl(dst, src, x, y, z);
 }
 } // namespace dvdb

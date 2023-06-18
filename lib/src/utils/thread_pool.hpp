@@ -17,7 +17,8 @@ public:
     thread_pool(size_t count);
     ~thread_pool();
 
-    template <class T> auto enqueue(T task) -> std::future<decltype(task())>
+    template <class T>
+    auto enqueue(T task) -> std::future<decltype(task())>
     {
         auto wrapper = std::make_shared<std::packaged_task<decltype(task())()>>(std::move(task));
         auto future = wrapper->get_future();
@@ -30,6 +31,13 @@ public:
         _cvar.notify_one();
         return future;
     }
+
+    int worker_count()
+    {
+        return _workers.size();
+    }
+
+    void work_together();
 
 private:
     std::mutex _queue_mtx;
