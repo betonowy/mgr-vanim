@@ -29,19 +29,25 @@ struct dvdb_state
 {
     std::mutex status_mtx;
     std::string status_string;
+    std::string compression_string;
 
     size_t read_size = 0;
-    size_t written_size = 0;
+    std::atomic<size_t> written_size = 0;
 
     size_t leaves_total = 0;
     size_t leaves_processed = 0;
 
+    size_t pending_compressions = 0;
+
     std::vector<uint8_t> _vdb_buffer;
+    bool previous_was_empty = true;
 };
 } // namespace converter
 
 namespace
 {
+static constexpr auto FORCE_KEYFRAME_SIZE = 4096;
+
 size_t vdb_determine_leafless_copy_size_direct_ptr(const void *data)
 {
     // Removing constness is absolutely OK, because data will not be modified there
@@ -114,16 +120,38 @@ struct encoder_context
 {
     static constexpr size_t src_center_index = 13;
 
+    size_t written = 0;
+    uint8_t buffer[1024];
+
     dvdb::cube_888_mask *dst_mask, *final_mask, *src_neighborhood_masks[27];
     dvdb::cube_888_f32 *dst, *final, *src_neighborhood[27], dst_fmask;
 
-    uint8_t buffer[1024];
-    size_t written = 0;
     uint64_t key;
 };
 
 void vdb_encode(encoder_context *ctx, float max_error)
 {
+    {
+        float min = 1e12, max = -1e12;
+
+        for (int j = 0; j < std::size(ctx->dst->values); ++j)
+        {
+            const auto value = ctx->dst->values[j];
+
+            if (value < min)
+            {
+                min = value;
+            }
+
+            if (value > max)
+            {
+                max = value;
+            }
+        }
+
+        max_error = max_error * max_error * (max - min);
+    }
+
     static constexpr float FLOAT_MAX = std::numeric_limits<float>::max();
     static constexpr dvdb::cube_888_f32 empty_values_f32{};
 
@@ -149,7 +177,7 @@ void vdb_encode(encoder_context *ctx, float max_error)
     dvdb::rotate_refill(&rotated, ctx->src_neighborhood, rotation.x, rotation.y, rotation.z);
     dvdb::rotate_refill(&rotated_mask, ctx->src_neighborhood_masks, rotation.x, rotation.y, rotation.z);
 
-    // if (error_rotation_only < max_error)
+    if (error_rotation_only < max_error)
     {
         write(dvdb::code_points::setup{
             .has_source = true,
@@ -174,10 +202,19 @@ void vdb_encode(encoder_context *ctx, float max_error)
         return;
     }
 
+    // BEWARE that past this point bitmask must be encoded if rotation isn't enough
+
     float add, mul;
-    dvdb::cube_888_f32 rotated_fma, rotated_fma_mask;
+    dvdb::cube_888_f32 rotated_fma = rotated;
 
     dvdb::linear_regression_with_mask(&rotated, ctx->dst, &add, &mul, &ctx->dst_fmask);
+
+    // Until I fix linear regression sometimes going wild
+    if (std::abs(add) > 100 || std::abs(mul) > 100)
+    {
+        add = 0, mul = 1;
+    }
+
     dvdb::fma(&rotated, &rotated_fma, add, mul);
 
     float error_rotation_fma_only = dvdb::mean_squared_error_with_mask(&rotated_fma, ctx->dst, &ctx->dst_fmask);
@@ -187,7 +224,7 @@ void vdb_encode(encoder_context *ctx, float max_error)
         write(dvdb::code_points::setup{
             .has_source = true,
             .has_rotation = rotation != glm::ivec3(0),
-            .has_fma = true,
+            .has_fma_and_new_mask = true,
         });
 
         write(dvdb::code_points::source_key{
@@ -208,8 +245,10 @@ void vdb_encode(encoder_context *ctx, float max_error)
             .multiply = mul,
         });
 
+        write(*ctx->dst_mask);
+
         *ctx->final = rotated_fma;
-        *ctx->final_mask = *ctx->dst_mask;
+        *ctx->final_mask = rotated_mask;
 
         return;
     }
@@ -221,13 +260,18 @@ void vdb_encode(encoder_context *ctx, float max_error)
 
     dvdb::sub(ctx->dst, &rotated_fma, &diff);
 
-    for (int i = 0x01; i <= 0xff; ++i)
+    dvdb::cube_888_f32 post_diff;
+
+    for (int i = 0x02; i <= 0xfe; ++i)
     {
         quantization = i;
 
-        dvdb::encode_derivative_to_i8(&diff, &diff8, &max, &min, quantization);
-        dvdb::decode_derivative_from_i8(&diff8, &diff_decoded, max, min, quantization);
-        error_diff = dvdb::mean_squared_error_with_mask(&diff_decoded, ctx->dst, &ctx->dst_fmask);
+        dvdb::encode_to_i8(&diff, &diff8, &max, &min, quantization);
+        dvdb::decode_from_i8(&diff8, &diff_decoded, max, min, quantization);
+
+        dvdb::add(&diff_decoded, &rotated_fma, &post_diff);
+
+        error_diff = dvdb::mean_squared_error_with_mask(&post_diff, ctx->dst, &ctx->dst_fmask);
 
         if (error_diff <= max_error)
         {
@@ -235,15 +279,16 @@ void vdb_encode(encoder_context *ctx, float max_error)
         }
     }
 
-    // last crucial step
+    // Most elaborate encoding
     {
         write(dvdb::code_points::setup{
             .has_source = true,
             .has_rotation = rotation != glm::ivec3(0),
-            .has_fma = true,
+            .has_fma_and_new_mask = true,
             .has_values = true,
             .has_diff = true,
-            .has_derivative = true,
+            .has_derivative = false,
+            .has_dct = false,
             .has_map = true,
         });
 
@@ -265,6 +310,8 @@ void vdb_encode(encoder_context *ctx, float max_error)
             .multiply = mul,
         });
 
+        write(*ctx->dst_mask);
+
         write(dvdb::code_points::quantization{
             quantization,
         });
@@ -276,17 +323,16 @@ void vdb_encode(encoder_context *ctx, float max_error)
 
         write(diff8);
 
-        *ctx->final = diff_decoded;
+        *ctx->final = post_diff;
         *ctx->final_mask = *ctx->dst_mask;
     }
 }
 
 std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_state, void *final_state, converter::dvdb_state *state, std::shared_ptr<utils::thread_pool> thread_pool)
 {
-    static constexpr float max_error_base = 0.01f;
+    static constexpr float max_error_base = 0.05f;
 
-    converter::nvdb_reader src_reader, dst_reader, final_reader;
-    // encoder_context ctx;
+    converter::nvdb_reader src_reader{}, dst_reader{}, final_reader{};
 
     src_reader.initialize(const_cast<void *>(src_state));
     dst_reader.initialize(const_cast<void *>(dst_state));
@@ -329,15 +375,12 @@ std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_
         ++state->leaves_processed;
     }
 
-    state->leaves_total = dst_reader.leaf_count();
     state->leaves_processed = 0;
 
     {
         std::lock_guard lock(state->status_mtx);
         state->status_string = "Dispatching leaf data processing...";
     }
-
-    float max_error = max_error_base * max_error_base * (max - min);
 
     std::vector<encoder_context> thread_contexts(dst_reader.leaf_count());
     std::vector<std::future<void>> work_finished(dst_reader.leaf_count());
@@ -353,14 +396,11 @@ std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_
         ctx.final_mask = final_reader.leaf_bitmask_ptr(i);
         ctx.final = final_reader.leaf_table_ptr(i);
         ctx.key = dst_reader.leaf_key(i);
+        ctx.written = 0;
 
         src_reader.leaf_neighbors(dst_reader.leaf_coord(i), ctx.src_neighborhood, ctx.src_neighborhood_masks, &empty_values, &empty_mask);
 
-        thread_pool->enqueue([ctx_ptr = &ctx, max_error]() { vdb_encode(ctx_ptr, max_error); });
-
-        vdb_encode(&ctx, max_error);
-
-        std::copy_n(ctx.buffer, ctx.written, std::back_inserter(output_data));
+        work_finished[i] = thread_pool->enqueue([ctx_ptr = &ctx]() { vdb_encode(ctx_ptr, max_error_base); });
 
         ++state->leaves_processed;
     }
@@ -370,17 +410,30 @@ std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_
         state->status_string = "Main thread joined data processing workers...";
     }
 
+    thread_pool->work_together();
+
     {
         std::lock_guard lock(state->status_mtx);
         state->status_string = "Finished! Acquiring processed data...";
     }
 
-    for (;;)
-    {
+    state->leaves_processed = 0;
 
+    for (int i = 0; i < dst_reader.leaf_count(); ++i)
+    {
+        work_finished[i].get();
+        const auto &ctx = thread_contexts[i];
+
+        if (ctx.written > sizeof(ctx.buffer))
+        {
+            throw std::runtime_error("Buffer overrun when writing encoded data!");
+        }
+
+        std::copy_n(ctx.buffer, ctx.written, std::back_inserter(output_data));
+        ++state->leaves_processed;
     }
 
-        state->leaves_total = 0;
+    state->leaves_total = 0;
 
     return output_data;
 }
@@ -395,16 +448,29 @@ dvdb_converter::dvdb_converter(std::shared_ptr<utils::thread_pool> pool)
 
 dvdb_converter::~dvdb_converter() = default;
 
-std::string dvdb_converter::current_step()
+std::string dvdb_converter::current_processing_step()
 {
     std::lock_guard lock(_state->status_mtx);
     return _state->status_string;
+}
+
+std::string dvdb_converter::current_compression_step()
+{
+    std::lock_guard lock(_state->status_mtx);
+    return _state->compression_string;
 }
 
 void dvdb_converter::set_status(std::string str)
 {
     std::lock_guard lock(_state->status_mtx);
     _state->status_string = std::move(str);
+}
+
+void dvdb_converter::change_compression_status(int diff)
+{
+    std::lock_guard lock(_state->status_mtx);
+    _state->pending_compressions += diff;
+    _state->compression_string = "Pending files to compress (LZ4): " + std::to_string(_state->pending_compressions);
 }
 
 void dvdb_converter::create_keyframe(std::filesystem::path path)
@@ -445,6 +511,11 @@ void dvdb_converter::create_keyframe(std::filesystem::path path)
             const auto &grid = nvdb_mmap.grids()[i];
 
             output.write(reinterpret_cast<const char *>(grid.ptr), grid.size);
+        }
+
+        if (header.vdb_required_size < FORCE_KEYFRAME_SIZE)
+        {
+            _state->previous_was_empty = true;
         }
     }
 
@@ -492,9 +563,13 @@ void dvdb_converter::create_keyframe(std::filesystem::path path)
         std::memcpy(_state->_vdb_buffer.data(), input.data(), input.size());
     }
 
-    set_status("Compressing (LZ4):  \n" + dvdb_path.string());
+    change_compression_status(1);
 
-    _state->written_size += pack_file(dvdb_path.c_str());
+    _thread_pool->enqueue([weak = std::weak_ptr(_state), this, dvdb_path]() {
+        auto lock = weak.lock();
+        _state->written_size += pack_file(dvdb_path.c_str());
+        change_compression_status(-1);
+    });
 }
 
 void dvdb_converter::add_diff_frame(std::filesystem::path path)
@@ -508,6 +583,12 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
     dvdb_path.replace_extension(".dvdb");
 
     const auto current_state_header = reinterpret_cast<const dvdb::headers::main *>(_state->_vdb_buffer.data());
+
+    // First frame, make keyframe first
+    if (!current_state_header)
+    {
+        return create_keyframe(path);
+    }
 
     dvdb::headers::main next_state_header = {
         .magic = dvdb::MAGIC_NUMBER,
@@ -525,6 +606,17 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
         next_state_header.frames[i].base_tree_copy_size = leafless_size;
         next_state_header.frames[i].base_tree_final_size = grid.size;
         next_state_header.vdb_required_size += grid.size;
+    }
+
+    // look this tree is probably leafless and has no values. Diff breaks on this so just do it the normal way...
+    if (bool is_empty = next_state_header.vdb_required_size < FORCE_KEYFRAME_SIZE; is_empty || _state->previous_was_empty)
+    {
+        _state->previous_was_empty = is_empty;
+        return create_keyframe(path);
+    }
+    else
+    {
+        _state->previous_was_empty = false;
     }
 
     std::vector<uint8_t> next_buffer(next_state_header.vdb_required_size);
@@ -547,7 +639,7 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
 
         set_status("Creating diff (grid " + std::to_string(i) + ")\n  " + dvdb_path.string());
 
-        diff_data_chunks.emplace_back(vdb_create_rle_diff(source_state_ptr, destination_state_ptr, diff_state_ptr, _state.get()));
+        diff_data_chunks.emplace_back(vdb_create_rle_diff(source_state_ptr, destination_state_ptr, diff_state_ptr, _state.get(), _thread_pool));
     }
 
     set_status("Realigning data\n  " + dvdb_path.string());
@@ -564,7 +656,7 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
         compressed_header.frames[i].base_tree_offset_start = compressed_base_tree_offset;
         compressed_header.frames[i].base_tree_copy_size = leafless_size;
         compressed_header.frames[i].base_tree_final_size = grid.size;
-        compressed_header.vdb_required_size += grid.size;
+        // compressed_header.vdb_required_size += grid.size;
 
         compressed_base_tree_offset += leafless_size;
     }
@@ -599,9 +691,13 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
 
     _state->_vdb_buffer = std::move(next_buffer);
 
-    set_status("Compressing (LZ4):  \n" + dvdb_path.string());
+    change_compression_status(1);
 
-    _state->written_size += pack_file(dvdb_path.c_str());
+    _thread_pool->enqueue([weak = std::weak_ptr(_state), this, dvdb_path]() {
+        auto lock = weak.lock();
+        _state->written_size += pack_file(dvdb_path.c_str());
+        change_compression_status(-1);
+    });
 }
 
 float dvdb_converter::current_compression_ratio()
@@ -624,4 +720,8 @@ size_t dvdb_converter::current_processed_leaves()
     return _state->leaves_processed;
 }
 
+bool dvdb_converter::finished()
+{
+    return _state->pending_compressions == 0;
+}
 } // namespace converter

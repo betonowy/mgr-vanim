@@ -50,7 +50,11 @@ void append_upper_leaves_from_nvdb(pnanovdb_buf_t buf, pnanovdb_upper_handle_t u
 
 void nvdb_reader::initialize(void *grid_ptr)
 {
-    _leaf_handles.clear();
+    if (!_leaf_handles.empty())
+    {
+        _leaf_handles.clear();
+    }
+
     _buf.data = static_cast<uint32_t *>(grid_ptr);
 
     const pnanovdb_grid_handle_t grid{};
@@ -160,7 +164,7 @@ constexpr glm::ivec3 index_to_diff_coord(int i)
 }
 } // namespace
 
-void nvdb_reader::leaf_neighbors(glm::ivec3 coord, dvdb::cube_888_f32 **values, dvdb::cube_888_mask **masks, dvdb::cube_888_f32* empty_values, dvdb::cube_888_mask* empty_mask) const
+void nvdb_reader::leaf_neighbors(glm::ivec3 coord, dvdb::cube_888_f32 **values, dvdb::cube_888_mask **masks, dvdb::cube_888_f32 *empty_values, dvdb::cube_888_mask *empty_mask) const
 {
     for (int i = 0; i < 3 * 3 * 3; ++i)
     {

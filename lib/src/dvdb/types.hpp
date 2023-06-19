@@ -19,7 +19,7 @@ static constexpr uint64_t MAX_SUPPORTED_GRID_COUNT = 4;
 template <typename T>
 struct cube_888
 {
-    alignas(32) T values[512];
+    T values[512];
 
     bool is_avx_aligned() const
     {
@@ -29,7 +29,7 @@ struct cube_888
 };
 
 using cube_888_f32 = cube_888<float>;
-using cube_888_i8 = cube_888<int8_t>;
+using cube_888_i8 = cube_888<uint8_t>;
 
 struct cube_888_mask
 {
@@ -87,7 +87,7 @@ struct setup
 {
     bool has_source : 1;
     bool has_rotation : 1;
-    bool has_fma : 1;
+    bool has_fma_and_new_mask : 1;
     bool has_values : 1;
     bool has_diff : 1;
     bool has_derivative : 1;

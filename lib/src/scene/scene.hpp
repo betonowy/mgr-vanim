@@ -12,6 +12,7 @@ class scene
 {
 public:
     scene();
+    ~scene();
 
     void init(std::function<void(object_context &)>);
 

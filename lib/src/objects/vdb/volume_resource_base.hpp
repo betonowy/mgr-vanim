@@ -23,7 +23,7 @@ namespace objects::vdb
 class volume_resource_base : public scene::object
 {
 public:
-    virtual const char* class_name() = 0;
+    virtual const char *class_name() = 0;
 
     void set_buffer_size(bool preserve_contents);
 
@@ -33,6 +33,11 @@ public:
 
     void set_frames_ahead(int frames_ahead);
     int get_frames_ahead();
+
+    size_t get_current_frame()
+    {
+        return _current_frame;
+    }
 
     // void set_no_unload(bool);
     // bool get_no_unload();

@@ -65,6 +65,14 @@ void animation_controller::update(scene::object_context &ctx, float)
             _volume_resource->set_play_animation(play_animation);
         }
 
+        ImGui::Text("Current frame: %lu", _volume_resource->get_current_frame());
+
+        {
+            int frame_rate = _volume_resource->get_frame_rate();
+            ImGui::SliderInt("Frame rate", &frame_rate, 1, 30);
+            _volume_resource->set_frame_rate(frame_rate);
+        }
+
         ImGui::Separator();
 
         if (ImGui::TreeNode("Grids"))

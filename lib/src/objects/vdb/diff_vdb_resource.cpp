@@ -34,6 +34,11 @@ const char *diff_vdb_resource::class_name()
     return "DiffVDB Animation";
 }
 
+void diff_vdb_resource::on_destroy(scene::object_context &ctx)
+{
+    ctx.generic_thread_pool().finish();
+}
+
 diff_vdb_resource::diff_vdb_resource(std::filesystem::path path)
     : _resource_directory(path)
 {
@@ -174,7 +179,11 @@ void grid_reconstruction_rle(void *diff_ptr, void *dst_ptr, void *src_ptr)
             src_accessor.leaf_neighbors(source, src_neighbor_values_ptrs, src_neighbor_masks_ptrs, &empty_values, &empty_mask);
 
             dvdb::rotate_refill(&dst, src_neighbor_values_ptrs, x, y, z);
-            dvdb::rotate_refill(&dst_mask, src_neighbor_masks_ptrs, x, y, z);
+
+            if (!setup.has_fma_and_new_mask)
+            {
+                dvdb::rotate_refill(&dst_mask, src_neighbor_masks_ptrs, x, y, z);
+            }
         }
         else if (setup.has_source)
         {
@@ -192,19 +201,29 @@ void grid_reconstruction_rle(void *diff_ptr, void *dst_ptr, void *src_ptr)
                 const auto src_mask = src_accessor.leaf_bitmask_ptr(index);
 
                 dst = *src;
-                dst_mask = *src_mask;
+
+                if (!setup.has_fma_and_new_mask)
+                {
+                    dst_mask = *src_mask;
+                }
             }
         }
         else
         {
             dst = {};
-            dst_mask = {};
+
+            if (!setup.has_fma_and_new_mask)
+            {
+                dst_mask = {};
+            }
         }
 
-        if (setup.has_fma)
+        if (setup.has_fma_and_new_mask)
         {
             const auto [add, mul] = read<dvdb::code_points::fma>(diff_current_ptr);
             dvdb::fma(&dst, &dst, add, mul);
+
+            dst_mask = read<dvdb::cube_888_mask>(diff_current_ptr);
         }
 
         *dst_ptr = dst;
@@ -212,6 +231,7 @@ void grid_reconstruction_rle(void *diff_ptr, void *dst_ptr, void *src_ptr)
 
         if (!setup.has_values)
         {
+
             continue;
         }
 
@@ -227,7 +247,7 @@ void grid_reconstruction_rle(void *diff_ptr, void *dst_ptr, void *src_ptr)
         }();
 
         dvdb::cube_888_i8 encoder_values = read<dvdb::cube_888_i8>(diff_current_ptr);
-        dvdb::cube_888_f32 encoder_float_values;
+        dvdb::cube_888_f32 encoder_float_values{};
 
         if (setup.has_derivative)
         {
@@ -251,10 +271,13 @@ void grid_reconstruction_rle(void *diff_ptr, void *dst_ptr, void *src_ptr)
 
         if (setup.has_diff)
         {
-            dvdb::add(&dst, &values, &dst);
+            dvdb::add(&dst, &values, dst_ptr);
+        }
+        else
+        {
+            *dst_ptr = values;
         }
 
-        *dst_ptr = dst;
         *dst_mask_ptr = dst_mask;
     }
 }
@@ -270,11 +293,14 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
     _ssbo_block_frame[block_number] = frame_number;
     _ssbo_timestamp[block_number] = std::chrono::steady_clock::now();
 
-    std::swap(_created_state, _current_state);
+    { // lock to make sure workers finished their previous workload
+        std::lock_guard lock(_state_modification_mtx);
+        std::swap(_created_state, _current_state);
+    }
 
-    std::atomic_bool resource_locked = false;
+    std::atomic_bool worker_side_locked = false;
 
-    std::function task = [this, wptr = weak_from_this(), frame_number, block_number, &resource_locked]() -> update_range {
+    std::function task = [this, wptr = weak_from_this(), frame_number, block_number, &worker_side_locked]() -> update_range {
         glm::uvec4 offsets(~0);
         size_t copy_size = 0;
 
@@ -286,7 +312,7 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
         }
 
         std::lock_guard lock(_state_modification_mtx);
-        resource_locked = true;
+        worker_side_locked = true;
 
         auto map_t1 = std::chrono::steady_clock::now();
         // mio::mmap_source dvdb_mmap(_dvdb_frames[frame_number].second.string());
@@ -343,6 +369,11 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
                 // removing constness is ok here
                 void *diff_data = const_cast<char *>(source_buffer.data()) + header->frames[i].diff_data_offset_start;
 
+                if (frame_number == 179)
+                {
+                    int _ = 0;
+                }
+
                 grid_reconstruction_rle(diff_data, dst_grid, src_grid);
             }
 
@@ -365,7 +396,7 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
 
     _ssbo_block_loaded[block_number] = ctx.generic_thread_pool().enqueue(std::move(task));
 
-    while (!resource_locked)
+    while (!worker_side_locked)
     {
         std::this_thread::yield();
     }

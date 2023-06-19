@@ -36,7 +36,7 @@ public:
     };
 
 private:
-    std::shared_ptr<converter::dvdb_converter> dvdb_converter{std::make_shared<converter::dvdb_converter>()};
+    std::shared_ptr<converter::dvdb_converter> dvdb_converter;
     std::filesystem::path _working_path;
     job_result _current_status;
     float _error;

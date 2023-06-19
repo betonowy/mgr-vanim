@@ -63,6 +63,15 @@ void vdb_init_0()
     vdb[0].grid_type = pnanovdb_grid_get_grid_type(vdb[0].buf, vdb[0].grid_handle);
 }
 
+void vdb_init_1()
+{
+    vdb[1].grid_handle.address.byte_offset = vdb_grid_offsets[1];
+    vdb[1].tree_handle = pnanovdb_grid_get_tree(vdb[1].buf, vdb[1].grid_handle);
+    vdb[1].root_handle = pnanovdb_tree_get_root(vdb[1].buf, vdb[1].tree_handle);
+    pnanovdb_readaccessor_init(vdb[1].accessor, vdb[1].root_handle);
+    vdb[1].grid_type = pnanovdb_grid_get_grid_type(vdb[1].buf, vdb[1].grid_handle);
+}
+
 PNANOVDB_FORCE_INLINE float pnanovdb_root_read_float_typed(pnanovdb_grid_type_t grid_type, pnanovdb_buf_t buf, pnanovdb_address_t address, PNANOVDB_IN(pnanovdb_coord_t) ijk, pnanovdb_uint32_t level)
 {
     float ret;

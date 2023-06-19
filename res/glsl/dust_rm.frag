@@ -152,10 +152,12 @@ float dust_ss_stage_2(vec3 origin, vec3 dir)
     return (clamp(acc_density, 0, threshold));
 }
 
+#define vdb_number 1
+
 vec4 dust_ss_stage_1(vec3 origin, vec3 dir, vec3 sun_dir, vec3 sun_col)
 {
-    pnanovdb_coord_t bbox_min = pnanovdb_root_get_bbox_min(vdb[0].buf, vdb[0].accessor.root);
-    pnanovdb_coord_t bbox_max = pnanovdb_root_get_bbox_max(vdb[0].buf, vdb[0].accessor.root);
+    pnanovdb_coord_t bbox_min = pnanovdb_root_get_bbox_min(vdb[vdb_number].buf, vdb[vdb_number].accessor.root);
+    pnanovdb_coord_t bbox_max = pnanovdb_root_get_bbox_max(vdb[vdb_number].buf, vdb[vdb_number].accessor.root);
     pnanovdb_vec3_t bbox_minf = pnanovdb_coord_to_vec3(bbox_min);
     pnanovdb_vec3_t bbox_maxf = pnanovdb_coord_to_vec3(pnanovdb_coord_add(bbox_max, pnanovdb_coord_uniform(1)));
 
@@ -176,10 +178,10 @@ vec4 dust_ss_stage_1(vec3 origin, vec3 dir, vec3 sun_dir, vec3 sun_col)
     pnanovdb_coord_t ijk = pnanovdb_hdda_pos_to_ijk(PNANOVDB_REF(pos));
 
     uint level;
-    pnanovdb_address_t address = pnanovdb_readaccessor_get_value_address_and_level(vdb[0].grid_type, vdb[0].buf, vdb[0].accessor, PNANOVDB_REF(ijk), PNANOVDB_REF(level));
-    float v0 = pnanovdb_root_read_float_typed(vdb[0].grid_type, vdb[0].buf, address, ijk, level);
+    pnanovdb_address_t address = pnanovdb_readaccessor_get_value_address_and_level(vdb[vdb_number].grid_type, vdb[vdb_number].buf, vdb[vdb_number].accessor, PNANOVDB_REF(ijk), PNANOVDB_REF(level));
+    float v0 = pnanovdb_root_read_float_typed(vdb[vdb_number].grid_type, vdb[vdb_number].buf, address, ijk, level);
 
-    pnanovdb_int32_t dim = pnanovdb_uint32_as_int32(pnanovdb_readaccessor_get_dim(vdb[0].grid_type, vdb[0].buf, vdb[0].accessor, PNANOVDB_REF(ijk)));
+    pnanovdb_int32_t dim = pnanovdb_uint32_as_int32(pnanovdb_readaccessor_get_dim(vdb[vdb_number].grid_type, vdb[vdb_number].buf, vdb[vdb_number].accessor, PNANOVDB_REF(ijk)));
     pnanovdb_hdda_t hdda;
     pnanovdb_hdda_init(PNANOVDB_REF(hdda), origin, tmin, dir, tmax, dim);
 
@@ -190,75 +192,97 @@ vec4 dust_ss_stage_1(vec3 origin, vec3 dir, vec3 sun_dir, vec3 sun_col)
     float threshold = 0.05;
     float mass_multiplier = 10.0;
 
-    do
-    {
-        pnanovdb_vec3_t pos_start = pnanovdb_hdda_ray_start(origin, hdda.tmin + 0.001f, dir);
-        ijk = pnanovdb_hdda_pos_to_ijk(PNANOVDB_REF(pos_start));
-        dim = pnanovdb_uint32_as_int32(pnanovdb_readaccessor_get_dim(vdb[0].grid_type, vdb[0].buf, vdb[0].accessor, PNANOVDB_REF(ijk)));
-        pnanovdb_hdda_update(PNANOVDB_REF(hdda), origin, dir, dim);
+    float step_length = 0.5;
 
-        if (hdda.dim > 1 || !pnanovdb_readaccessor_is_active(vdb[0].grid_type, vdb[0].buf, vdb[0].accessor, PNANOVDB_REF(ijk)))
+    while (hdda.tmin < hdda.tmax)
+    {  
+        hdda.tmin += step_length;
+        pnanovdb_vec3_t pos = pnanovdb_hdda_ray_start(origin, hdda.tmin, dir); 
+
+        ijk = pnanovdb_hdda_pos_to_ijk(PNANOVDB_REF(pos));
+        pnanovdb_address_t address = pnanovdb_readaccessor_get_value_address_and_level(vdb[vdb_number].grid_type, vdb[vdb_number].buf, vdb[vdb_number].accessor, PNANOVDB_REF(ijk), PNANOVDB_REF(level));
+
+        if (level == 4)
         {
-            saved_t = -1.0;
-            last_v = 0.0;
-            last_l = 0.0;
+            break;
+        }
+
+        if (!pnanovdb_readaccessor_is_active(vdb[vdb_number].grid_type, vdb[vdb_number].buf, vdb[vdb_number].accessor, ijk))
+        {
             continue;
         }
 
-        do
-        {
-            pnanovdb_address_t address = pnanovdb_readaccessor_get_value_address_and_level(vdb[0].grid_type, vdb[0].buf, vdb[0].accessor, PNANOVDB_REF(hdda.voxel), PNANOVDB_REF(level));
+        float v = pnanovdb_root_read_float_typed(vdb[vdb_number].grid_type, vdb[vdb_number].buf, address, ijk, level);
 
-            // float v = pnanovdb_root_read_float_typed(vdb[0].grid_type, vdb[0].buf, address, hdda.voxel, level);
-            float v = vdb_read_world_value_0(origin + dir * hdda.tmin);
-            float l = 0;
+        // acc_density += v * 0.05;
 
-            if (v > 0)
-            {
-                l = exp(-dust_ss_stage_2(vdb_hdda_to_pos(origin, dir, hdda.tmin) - sun_dir * 0.5, sun_dir));
-            }
+        // pnanovdb_vec3_t pos_start = pnanovdb_hdda_ray_start(origin, hdda.tmin + 0.001f, dir);
+        // ijk = pnanovdb_hdda_pos_to_ijk(PNANOVDB_REF(pos_start));
+        // dim = pnanovdb_uint32_as_int32(pnanovdb_readaccessor_get_dim(vdb[vdb_number].grid_type, vdb[vdb_number].buf, vdb[vdb_number].accessor, PNANOVDB_REF(ijk)));
+        // pnanovdb_hdda_update(PNANOVDB_REF(hdda), origin, dir, dim);
 
-            if (saved_t != -1)
-            {
-                float step_length = hdda.tmin - saved_t;
-                float mass = last_v * step_length * mass_multiplier;
-                float weight = exp(-mass);
+        // if (hdda.dim > 1 || !pnanovdb_readaccessor_is_active(vdb[vdb_number].grid_type, vdb[vdb_number].buf, vdb[vdb_number].accessor, PNANOVDB_REF(ijk)))
+        // {
+        //     saved_t = -1.0;
+        //     last_v = 0.0;
+        //     last_l = 0.0;
+        //     continue;
+        // }
 
-                acc_density += T * (l * (1.0 - weight));
+        // do
+        // {
+        //     pnanovdb_address_t address = pnanovdb_readaccessor_get_value_address_and_level(vdb[vdb_number].grid_type, vdb[vdb_number].buf, vdb[0].accessor, PNANOVDB_REF(hdda.voxel), PNANOVDB_REF(level));
 
-                T *= weight;
+        //     // float v = pnanovdb_root_read_float_typed(vdb[0].grid_type, vdb[0].buf, address, hdda.voxel, level);
+        //     float v = vdb_read_world_value_0(origin + dir * hdda.tmin);
+        //     float l = 0;
 
-                if (T < threshold)
-                {
-                    return vec4(vec3(acc_density), 1.0);
-                }
-            }
+        //     if (v > 0)
+        //     {
+        //         l = v;
+        //     }
 
-            saved_t = hdda.tmin;
-            last_v = v;
-            last_l = l;
+        //     if (saved_t != -1)
+        //     {
+        //         float step_length = hdda.tmin - saved_t;
+        //         float mass = last_v * step_length * mass_multiplier;
+        //         float weight = exp(-mass);
 
-            pnanovdb_hdda_init(PNANOVDB_REF(hdda), origin, hdda.tmin + 1.401 / T, dir, tmax, dim);
-        } while (pnanovdb_hdda_step(PNANOVDB_REF(hdda)));
+                acc_density += T * (v * (1.0 - 0.9));
 
-        if (saved_t != -1)
-        {
-            acc_density += last_v * (hdda.tmin - saved_t);
+                T *= 1.0 - v * 0.1;
 
-            if (T < threshold)
-            {
-                return vec4(vec3(acc_density), 1.0);
-            }
-        }
+        //         if (T < threshold)
+        //         {
+        //             return vec4(vec3(acc_density), 1.0);
+        //         }
+        //     }
 
-    } while (pnanovdb_hdda_step(PNANOVDB_REF(hdda)));
+        //     saved_t = hdda.tmin;
+        //     last_v = v;
+        //     last_l = l;
+
+        //     pnanovdb_hdda_init(PNANOVDB_REF(hdda), origin, hdda.tmin + 0.66, dir, tmax, dim);
+        // } while (pnanovdb_hdda_step(PNANOVDB_REF(hdda)));
+
+        // if (saved_t != -1)
+        // {
+        //     acc_density += last_v * (hdda.tmin - saved_t);
+
+        //     if (T < threshold)
+        //     {
+        //         return vec4(vec3(acc_density), 1.0);
+        //     }
+        // }
+
+    }
 
     return vec4(vec3(acc_density), 1.0 - T);
 }
 
 void main()
 {
-    vdb_init_0();
+    vdb_init_1();
 
     vec3 origin = get_origin();
     vec3 start_dir = get_dir();
@@ -266,4 +290,5 @@ void main()
     vec3 sun_col = vec3(1.0);
 
     color = dust_ss_stage_1(origin, start_dir, sun_dir, sun_col);
+    color.a = 1.0;
 }

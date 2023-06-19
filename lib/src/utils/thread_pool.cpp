@@ -16,23 +16,28 @@ thread_pool::thread_pool(size_t count)
         _workers.emplace_back([this]() {
             while (true)
             {
-                task task;
-
                 {
-                    std::unique_lock lock(_queue_mtx);
+                    task task;
 
-                    _cvar.wait(lock, [this] { return _stopping || !_task_queue.empty(); });
-
-                    if (_stopping && _task_queue.empty())
                     {
-                        break;
+                        std::unique_lock lock(_queue_mtx);
+
+                        _cvar_queue.wait(lock, [this] { return _stopping || !_task_queue.empty(); });
+
+                        if (_stopping && _task_queue.empty())
+                        {
+                            break;
+                        }
+
+                        task = std::move(_task_queue.front());
+                        _task_queue.pop();
                     }
 
-                    task = std::move(_task_queue.front());
-                    _task_queue.pop();
+                    task();
+                    --active_tasks;
                 }
 
-                task();
+                _cvar_active_tasks.notify_all();
             }
         });
     }
@@ -46,11 +51,47 @@ thread_pool::~thread_pool()
         std::lock_guard lock(_queue_mtx);
         _stopping = true;
     }
-    _cvar.notify_all();
+    _cvar_queue.notify_all();
 
     for (auto &worker : _workers)
     {
         worker.join();
     }
+}
+
+void thread_pool::work_together()
+{
+    while (true)
+    {
+        {
+            task task;
+
+            {
+                std::lock_guard lock(_queue_mtx);
+
+                if (_task_queue.empty())
+                {
+                    break;
+                }
+
+                task = std::move(_task_queue.front());
+                _task_queue.pop();
+            }
+
+            task();
+            --active_tasks;
+        }
+        
+        _cvar_active_tasks.notify_all();
+    }
+}
+
+void thread_pool::finish()
+{
+    work_together();
+
+    std::unique_lock lock(_queue_mtx);
+
+    _cvar_active_tasks.wait(lock, [this] { return active_tasks == 0; });
 }
 } // namespace utils

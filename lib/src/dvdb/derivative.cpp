@@ -39,8 +39,8 @@ void map_values(float src_a, float src_b, float dst_a, float dst_b, const cube_8
     }
 }
 
-static constexpr auto range_a = 0;
-static constexpr float gamma = 0.87f;  // magic value - don't touch
+static constexpr auto range_a = 1;
+static constexpr float gamma = 0.87f;  // magic value - don't touch - somehow improves mean squared errors
 static constexpr int start_record = 1; // don't gamma correct first value (base component)
 
 void encode_derivative_to_i8(const cube_888_f32 *src, cube_888_i8 *der, float *max, float *min, uint8_t quantization_limit)

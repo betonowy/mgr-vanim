@@ -177,6 +177,7 @@ static constexpr dvdb::cube_888_f32 default_mask = filled_cube(1);
 float rotate_refill_find_astar(const cube_888_f32 *dst, const cube_888_f32 *dst_mask, cube_888_f32 *src[27], int *x, int *y, int *z)
 {
     cube_888_f32 test;
+    float test_error_pre_fma[27];
     float test_error[27];
 
     if (!dst_mask)
@@ -203,6 +204,7 @@ float rotate_refill_find_astar(const cube_888_f32 *dst, const cube_888_f32 *dst_
 
             float post_fma_error = mean_squared_error_with_mask(&test, dst, dst_mask);
 
+            test_error_pre_fma[i] = pre_fma_error;
             test_error[i] = std::min(pre_fma_error, post_fma_error);
         }
 
@@ -211,14 +213,14 @@ float rotate_refill_find_astar(const cube_888_f32 *dst, const cube_888_f32 *dst_
 
         if (tx == 0 && ty == 0 && tz == 0)
         {
-            return test_error[i];
+            return test_error_pre_fma[i];
         }
 
         *x += tx, *y += ty, *z += tz;
 
         if (std::abs(*x) > 7 || std::abs(*y) > 7 || std::abs(*z) > 7)
         {
-            return test_error[i];
+            return test_error_pre_fma[i];
         }
     }
 }

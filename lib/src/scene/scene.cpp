@@ -9,6 +9,18 @@ namespace scene
 {
 scene::scene() = default;
 
+scene::~scene()
+{
+    for (const auto &object : _context._objects)
+    {
+        if (!object->is_destroyed())
+        {
+            object->destroy();
+            object->on_destroy(_context);
+        }
+    }
+}
+
 void scene::init(std::function<void(object_context &)> func)
 {
     func(_context);
@@ -95,7 +107,7 @@ bool scene::loop(float delta_time)
     for (const auto &object : _context._objects_to_delete)
     {
         object->on_destroy(_context);
-        
+
         if (object.use_count() > 1)
         {
             throw std::runtime_error("Your lifetime handling sucks, bro.");

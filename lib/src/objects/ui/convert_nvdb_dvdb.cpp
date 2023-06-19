@@ -41,7 +41,7 @@ convert_nvdb_dvdb::job_result convert_nvdb_dvdb_job(std::vector<std::filesystem:
 
     size_t current_processed_count = initial_count - files.size();
 
-    bool make_keyframe = (current_processed_count - 1) % 10 == 0;
+    bool make_keyframe = (current_processed_count - 1) % 30 == 0;
 
     res.progress = 1.f - (static_cast<float>(files.size()) / initial_count);
 
@@ -49,27 +49,13 @@ convert_nvdb_dvdb::job_result convert_nvdb_dvdb_job(std::vector<std::filesystem:
         return convert_nvdb_dvdb_job(std::move(files), initial_count, thread_pool, converter);
     };
 
-    if (make_keyframe)
-    {
-        converter->create_keyframe(file);
-    }
-    else
-    {
-        converter->add_diff_frame(file);
-    }
+    converter->add_diff_frame(file);
 
     res.next_job = std::make_unique<decltype(res.next_job)::element_type>(thread_pool->enqueue(std::move(next_job)));
 
-    // if (!converter_status.success)
-    // {
-    //     res.error = converter_status.message;
-    // }
-    // else
-    // {
     std::stringstream ss;
     ss << '[' << current_processed_count << '/' << initial_count << "] Processed " + file.filename().string();
     res.description = ss.str();
-    // }
 
     return res;
 }
@@ -77,6 +63,8 @@ convert_nvdb_dvdb::job_result convert_nvdb_dvdb_job(std::vector<std::filesystem:
 
 void convert_nvdb_dvdb::init(scene::object_context &ctx)
 {
+    dvdb_converter = std::make_shared<converter::dvdb_converter>(ctx.generic_thread_pool_sptr());
+
     std::function directory_job = [path = _working_path, thread_pool = ctx.generic_thread_pool_sptr(), converter = dvdb_converter]() mutable -> job_result {
         job_result res;
 
@@ -136,7 +124,7 @@ void convert_nvdb_dvdb::init(scene::object_context &ctx)
 
 void convert_nvdb_dvdb::update(scene::object_context &ctx, float)
 {
-    if (_current_status.finished)
+    if (_current_status.finished && dvdb_converter->finished())
     {
         _current_status.description += "\n\nCompression ratio: " + std::to_string(dvdb_converter->current_compression_ratio());
 
@@ -144,7 +132,7 @@ void convert_nvdb_dvdb::update(scene::object_context &ctx, float)
         return destroy();
     }
 
-    if (utils::is_ready(*_current_status.next_job))
+    if (!_current_status.finished && utils::is_ready(*_current_status.next_job))
     {
         auto job_result = _current_status.next_job->get();
 
@@ -168,8 +156,8 @@ void convert_nvdb_dvdb::update(scene::object_context &ctx, float)
     auto window_pos = window_size;
     window_pos.x /= 2;
     window_pos.y /= 2;
-    window_size.x *= 0.8f;
-    window_size.y *= 0.8f;
+    window_size.x *= 0.5f;
+    window_size.y *= 0.5f;
 
     ImGui::SetNextWindowSize(window_size);
     ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
@@ -189,7 +177,8 @@ void convert_nvdb_dvdb::update(scene::object_context &ctx, float)
 
         ImGui::Text("Compression ratio: %f", dvdb_converter->current_compression_ratio());
 
-        ImGui::TextUnformatted(dvdb_converter->current_step().c_str());
+        ImGui::TextUnformatted(dvdb_converter->current_compression_step().c_str());
+        ImGui::TextUnformatted(dvdb_converter->current_processing_step().c_str());
 
         if (dvdb_converter->current_total_leaves() > 0)
         {

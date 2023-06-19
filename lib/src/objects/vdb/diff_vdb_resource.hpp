@@ -16,6 +16,8 @@ public:
 
     const char *class_name() override;
 
+    void on_destroy(scene::object_context &) override;
+
 private:
     std::filesystem::path _resource_directory;
     std::vector<std::pair<int, std::filesystem::path>> _dvdb_frames;

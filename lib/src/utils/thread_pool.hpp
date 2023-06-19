@@ -26,9 +26,10 @@ public:
         {
             std::lock_guard<std::mutex> lock(_queue_mtx);
             _task_queue.emplace([wrapper = std::move(wrapper)] { (*wrapper)(); });
+            ++active_tasks;
         }
 
-        _cvar.notify_one();
+        _cvar_queue.notify_one();
         return future;
     }
 
@@ -39,12 +40,17 @@ public:
 
     void work_together();
 
+    void finish();
+
 private:
     std::mutex _queue_mtx;
-    std::condition_variable _cvar;
+    std::condition_variable _cvar_queue;
+    std::condition_variable _cvar_active_tasks;
     bool _stopping = false;
 
     std::vector<std::thread> _workers;
     std::queue<task> _task_queue;
+
+    std::atomic<int> active_tasks;
 };
 }; // namespace utils
