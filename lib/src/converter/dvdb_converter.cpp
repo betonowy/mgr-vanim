@@ -1,6 +1,7 @@
 #include "dvdb_converter.hpp"
 #include "dvdb_compressor.hpp"
 #include "dvdb_converter_nvdb.hpp"
+#include "nvdb_compressor.hpp"
 
 #include <dvdb/common.hpp>
 #include <dvdb/compression.hpp>
@@ -166,16 +167,18 @@ void vdb_encode(encoder_context *ctx, float max_error)
     // determine if copy is even needed
     float error_empty = dvdb::mean_squared_error_with_mask(&empty_values_f32, ctx->dst, &ctx->dst_fmask);
 
-    glm::ivec3 rotation;
+    glm::ivec3 rotation{};
 
     // rotated source copy
-    float error_rotation_only = dvdb::rotate_refill_find_astar(ctx->dst, {}, ctx->src_neighborhood, &rotation.x, &rotation.y, &rotation.z);
+    // float error_rotation_only = dvdb::rotate_refill_find_astar(ctx->dst, {}, ctx->src_neighborhood, &rotation.x, &rotation.y, &rotation.z);
 
     dvdb::cube_888_f32 rotated;
     dvdb::cube_888_mask rotated_mask;
 
     dvdb::rotate_refill(&rotated, ctx->src_neighborhood, rotation.x, rotation.y, rotation.z);
     dvdb::rotate_refill(&rotated_mask, ctx->src_neighborhood_masks, rotation.x, rotation.y, rotation.z);
+
+    float error_rotation_only = 9099;
 
     if (error_rotation_only < max_error)
     {
@@ -203,27 +206,32 @@ void vdb_encode(encoder_context *ctx, float max_error)
     }
 
     // BEWARE that past this point bitmask must be encoded if rotation isn't enough
-
-    float add, mul;
+    float fadd, fmul;
     dvdb::cube_888_f32 rotated_fma = rotated;
 
-    dvdb::linear_regression_with_mask(&rotated, ctx->dst, &add, &mul, &ctx->dst_fmask);
+    dvdb::linear_regression_with_mask(&rotated, ctx->dst, &fadd, &fmul, &ctx->dst_fmask);
 
     // Until I fix linear regression sometimes going wild
-    if (std::abs(add) > 100 || std::abs(mul) > 100)
+    if (std::abs(fadd) >= dvdb::code_points::fma::range || std::abs(fmul) >= dvdb::code_points::fma::range)
     {
-        add = 0, mul = 1;
+        fadd = 0, fmul = 1;
     }
 
-    dvdb::fma(&rotated, &rotated_fma, add, mul);
+    // simulate precision loss
+    {
+        const auto [add, mul] = dvdb::code_points::fma::to_float(dvdb::code_points::fma::from_float(fadd, fmul));
+        dvdb::fma(&rotated, &rotated_fma, add, mul);
+    }
 
     float error_rotation_fma_only = dvdb::mean_squared_error_with_mask(&rotated_fma, ctx->dst, &ctx->dst_fmask);
 
     if (error_rotation_fma_only < max_error)
     {
+        const bool encodes_rotation = rotation != glm::ivec3(0);
+
         write(dvdb::code_points::setup{
             .has_source = true,
-            .has_rotation = rotation != glm::ivec3(0),
+            .has_rotation = encodes_rotation,
             .has_fma_and_new_mask = true,
         });
 
@@ -231,7 +239,7 @@ void vdb_encode(encoder_context *ctx, float max_error)
             ctx->key,
         });
 
-        if (rotation != glm::ivec3(0))
+        if (encodes_rotation)
         {
             write(dvdb::code_points::rotation_offset{
                 .x = static_cast<int16_t>(rotation.x),
@@ -240,10 +248,7 @@ void vdb_encode(encoder_context *ctx, float max_error)
             });
         }
 
-        write(dvdb::code_points::fma{
-            .add = add,
-            .multiply = mul,
-        });
+        write(dvdb::code_points::fma::from_float(fadd, fmul));
 
         write(*ctx->dst_mask);
 
@@ -305,10 +310,7 @@ void vdb_encode(encoder_context *ctx, float max_error)
             });
         }
 
-        write(dvdb::code_points::fma{
-            .add = add,
-            .multiply = mul,
-        });
+        write(dvdb::code_points::fma::from_float(fadd, fmul));
 
         write(*ctx->dst_mask);
 
@@ -330,7 +332,7 @@ void vdb_encode(encoder_context *ctx, float max_error)
 
 std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_state, void *final_state, converter::dvdb_state *state, std::shared_ptr<utils::thread_pool> thread_pool)
 {
-    static constexpr float max_error_base = 0.05f;
+    static constexpr float max_error_base = 0.1f;
 
     converter::nvdb_reader src_reader{}, dst_reader{}, final_reader{};
 
@@ -477,7 +479,10 @@ void dvdb_converter::create_keyframe(std::filesystem::path path)
 {
     set_status("Rewriting keyframe:\n  " + path.string());
 
-    utils::nvdb_mmap nvdb_mmap(path.string());
+    int alignment_correction = 0;
+    const auto nvdb_buffer = converter::unpack_nvdb_file(path.c_str(), &alignment_correction);
+
+    utils::nvdb_mmap nvdb_mmap(nvdb_buffer.data() + alignment_correction);
     _state->read_size += nvdb_mmap.mem_size();
 
     auto dvdb_path = path;
@@ -567,7 +572,7 @@ void dvdb_converter::create_keyframe(std::filesystem::path path)
 
     _thread_pool->enqueue([weak = std::weak_ptr(_state), this, dvdb_path]() {
         auto lock = weak.lock();
-        _state->written_size += pack_file(dvdb_path.c_str());
+        _state->written_size += pack_dvdb_file(dvdb_path.c_str());
         change_compression_status(-1);
     });
 }
@@ -576,7 +581,10 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
 {
     set_status("Processing interframe:\n  " + path.string());
 
-    utils::nvdb_mmap nvdb_mmap(path.string());
+    int alignment_correction = 0;
+    const auto nvdb_buffer = converter::unpack_nvdb_file(path.c_str(), &alignment_correction);
+
+    utils::nvdb_mmap nvdb_mmap(nvdb_buffer.data() + alignment_correction);
     _state->read_size += nvdb_mmap.mem_size();
 
     auto dvdb_path = path;
@@ -695,7 +703,7 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
 
     _thread_pool->enqueue([weak = std::weak_ptr(_state), this, dvdb_path]() {
         auto lock = weak.lock();
-        _state->written_size += pack_file(dvdb_path.c_str());
+        _state->written_size += pack_dvdb_file(dvdb_path.c_str());
         change_compression_status(-1);
     });
 }

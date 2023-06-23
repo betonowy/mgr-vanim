@@ -12,6 +12,7 @@
 #include <dvdb/types.hpp>
 #include <scene/object_context.hpp>
 #include <utils/future_helpers.hpp>
+#include <utils/gpu_memcpy.hpp>
 #include <utils/memory_counter.hpp>
 #include <utils/nvdb_mmap.hpp>
 #include <utils/scope_guard.hpp>
@@ -101,13 +102,13 @@ void diff_vdb_resource::init(scene::object_context &ctx)
 
     for (const auto &[n, path] : _dvdb_frames)
     {
-        auto buffer = converter::unpack_file(path.c_str());
+        mio::mmap_source mmap(path.c_str());
 
-        const auto header = reinterpret_cast<const dvdb::headers::main *>(buffer.data());
+        const auto header = reinterpret_cast<const dvdb::headers::block_description *>(mmap.data());
 
-        if (header->vdb_required_size > max_buffer_size)
+        if (header->uncompressed_size > max_buffer_size)
         {
-            max_buffer_size = header->vdb_required_size;
+            max_buffer_size = header->uncompressed_size;
         }
 
         _frames.emplace_back(frame{
@@ -116,6 +117,10 @@ void diff_vdb_resource::init(scene::object_context &ctx)
             .number = _frames.size(),
         });
     }
+
+    static constexpr auto ALIGNMENT = 64;
+
+    max_buffer_size += ALIGNMENT - (max_buffer_size & (ALIGNMENT - 1));
 
     _current_state.resize(max_buffer_size);
     _created_state.resize(max_buffer_size);
@@ -146,26 +151,21 @@ T read(uint8_t *&data)
 static dvdb::cube_888_mask empty_mask{};
 static dvdb::cube_888_f32 empty_values{};
 
-void grid_reconstruction_rle(void *diff_ptr, void *dst_ptr, void *src_ptr)
+void grid_reconstruction_worker(int index, void *diff_ptr, int bundle_size, const converter::nvdb_reader &dst_accessor, const converter::nvdb_reader &src_accessor)
 {
-    converter::nvdb_reader dst_accessor, src_accessor;
-
-    dst_accessor.initialize(dst_ptr);
-    src_accessor.initialize(src_ptr);
-
     auto *diff_current_ptr = reinterpret_cast<uint8_t *>(diff_ptr);
 
     dvdb::cube_888_f32 *src_neighbor_values_ptrs[27];
     dvdb::cube_888_mask *src_neighbor_masks_ptrs[27];
 
-    for (int i = 0; i < dst_accessor.leaf_count(); ++i)
+    for (int i = 0; i < bundle_size; ++i)
     {
         const auto setup = read<dvdb::code_points::setup>(diff_current_ptr);
 
         const auto setup_as_byte = *reinterpret_cast<const uint8_t *>(&setup);
 
-        auto dst_ptr = dst_accessor.leaf_table_ptr(i);
-        auto dst_mask_ptr = dst_accessor.leaf_bitmask_ptr(i);
+        auto dst_ptr = dst_accessor.leaf_table_ptr(i + index);
+        auto dst_mask_ptr = dst_accessor.leaf_bitmask_ptr(i + index);
 
         dvdb::cube_888_f32 dst;
         dvdb::cube_888_mask dst_mask;
@@ -220,7 +220,7 @@ void grid_reconstruction_rle(void *diff_ptr, void *dst_ptr, void *src_ptr)
 
         if (setup.has_fma_and_new_mask)
         {
-            const auto [add, mul] = read<dvdb::code_points::fma>(diff_current_ptr);
+            const auto [add, mul] = dvdb::code_points::fma::to_float(read<dvdb::code_points::fma>(diff_current_ptr));
             dvdb::fma(&dst, &dst, add, mul);
 
             dst_mask = read<dvdb::cube_888_mask>(diff_current_ptr);
@@ -282,6 +282,101 @@ void grid_reconstruction_rle(void *diff_ptr, void *dst_ptr, void *src_ptr)
     }
 }
 
+int get_one_diff_size(void *ptr)
+{
+    auto *moving_ptr = reinterpret_cast<uint8_t *>(ptr);
+    int size = sizeof(dvdb::code_points::setup);
+
+    const auto setup = read<dvdb::code_points::setup>(moving_ptr);
+
+    if (setup.has_source)
+    {
+        size += sizeof(dvdb::code_points::source_key);
+    }
+
+    if (setup.has_rotation)
+    {
+        size += sizeof(dvdb::code_points::rotation_offset);
+    }
+
+    if (setup.has_fma_and_new_mask)
+    {
+        size += sizeof(dvdb::code_points::fma) + sizeof(dvdb::cube_888_mask);
+    }
+
+    if (setup.has_values)
+    {
+        size += sizeof(dvdb::code_points::quantization) + sizeof(dvdb::cube_888_i8);
+    }
+
+    if (setup.has_map)
+    {
+        size += sizeof(dvdb::code_points::map);
+    }
+
+    return size;
+}
+
+int get_next_bundle_size(void *ptr, int bundle_size)
+{
+    int size = 0;
+
+    for (int i = 0; i < bundle_size; ++i)
+    {
+        int next_size = get_one_diff_size(ptr);
+        size += next_size;
+        ptr = static_cast<char *>(ptr) + next_size;
+    }
+
+    return size;
+}
+
+void grid_reconstruction(void *diff_ptr, void *dst_ptr, void *src_ptr, utils::thread_pool *thread_pool)
+{
+    converter::nvdb_reader dst_accessor, src_accessor;
+
+    dst_accessor.initialize(dst_ptr);
+    src_accessor.initialize(src_ptr);
+
+    auto *diff_moving_ptr = reinterpret_cast<uint8_t *>(diff_ptr);
+
+    dvdb::cube_888_f32 *src_neighbor_values_ptrs[27];
+    dvdb::cube_888_mask *src_neighbor_masks_ptrs[27];
+
+    int dst_leaf_count = dst_accessor.leaf_count();
+    int dst_leaf_current = 0;
+    int expected_bundle_size = dst_leaf_count / thread_pool->worker_count();
+
+    std::vector<std::future<void>> signals;
+    signals.reserve(thread_pool->worker_count() + 1);
+
+    while (dst_leaf_current + expected_bundle_size < dst_leaf_count)
+    {
+        const auto next_bundle_size = get_next_bundle_size(diff_moving_ptr, expected_bundle_size);
+
+        signals.emplace_back(thread_pool->enqueue([=]() {
+            grid_reconstruction_worker(dst_leaf_current, diff_moving_ptr, expected_bundle_size, dst_accessor, src_accessor);
+        }));
+
+        dst_leaf_current += expected_bundle_size;
+        diff_moving_ptr = diff_moving_ptr + next_bundle_size;
+    }
+
+    if (dst_leaf_current < dst_leaf_count)
+    {
+        signals.emplace_back(thread_pool->enqueue([=]() {
+            grid_reconstruction_worker(dst_leaf_current, diff_moving_ptr, dst_leaf_count - dst_leaf_current, dst_accessor, src_accessor);
+        }));
+    }
+
+    thread_pool->work_together();
+
+    for (auto &signal : signals)
+    {
+        signal.get();
+    }
+}
+
 void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_number, int frame_number)
 {
     auto wait_t1 = std::chrono::steady_clock::now();
@@ -300,11 +395,12 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
 
     std::atomic_bool worker_side_locked = false;
 
-    std::function task = [this, wptr = weak_from_this(), frame_number, block_number, &worker_side_locked]() -> update_range {
+    std::function task = [this, wptr = weak_from_this(), frame_number, block_number, &worker_side_locked, wtp = std::weak_ptr(ctx.generic_thread_pool_sptr())]() -> update_range {
         glm::uvec4 offsets(~0);
         size_t copy_size = 0;
 
         auto sptr = wptr.lock();
+        auto thread_pool = wtp.lock();
 
         if (!sptr)
         {
@@ -315,10 +411,15 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
         worker_side_locked = true;
 
         auto map_t1 = std::chrono::steady_clock::now();
-        // mio::mmap_source dvdb_mmap(_dvdb_frames[frame_number].second.string());
-        const auto source_buffer = converter::unpack_file(_dvdb_frames[frame_number].second.c_str());
+        const auto source_buffer = converter::unpack_dvdb_file(_dvdb_frames[frame_number].second.c_str());
 
         const auto header = reinterpret_cast<const dvdb::headers::main *>(source_buffer.data());
+
+        if (header->magic != dvdb::MAGIC_NUMBER)
+        {
+            throw std::runtime_error("DiffVDB magic number failed");
+        }
+
         copy_size = header->vdb_required_size;
         auto map_t2 = std::chrono::steady_clock::now();
 
@@ -332,10 +433,15 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
             for (size_t i = 0; i < header->vdb_grid_count; ++i)
             {
                 offsets[i] = header->frames[i].base_tree_offset_start;
+
+                if (offsets[i] % 16 != 0)
+                {
+                    throw std::runtime_error("Bad alignment");
+                }
             }
 
             _created_state = std::move(source_buffer);
-            std::memcpy(_ssbo_ptr + block_number * _ssbo_block_size, _created_state.data(), _created_state.size());
+            utils::gpu_memcpy(_ssbo_ptr + block_number * _ssbo_block_size, _created_state.data(), _created_state.size());
         }
         break;
         case dvdb::headers::main::frame_type_e::DIFF_FRAME: {
@@ -374,10 +480,10 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
                     int _ = 0;
                 }
 
-                grid_reconstruction_rle(diff_data, dst_grid, src_grid);
+                grid_reconstruction(diff_data, dst_grid, src_grid, thread_pool.get());
             }
 
-            std::memcpy(_ssbo_ptr + block_number * _ssbo_block_size, _created_state.data(), header->vdb_required_size);
+            utils::gpu_memcpy(_ssbo_ptr + block_number * _ssbo_block_size, _created_state.data(), header->vdb_required_size);
         }
         break;
         default:

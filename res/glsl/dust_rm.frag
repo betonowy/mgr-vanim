@@ -152,7 +152,7 @@ float dust_ss_stage_2(vec3 origin, vec3 dir)
     return (clamp(acc_density, 0, threshold));
 }
 
-#define vdb_number 1
+#define vdb_number 0
 
 vec4 dust_ss_stage_1(vec3 origin, vec3 dir, vec3 sun_dir, vec3 sun_col)
 {
@@ -282,7 +282,7 @@ vec4 dust_ss_stage_1(vec3 origin, vec3 dir, vec3 sun_dir, vec3 sun_col)
 
 void main()
 {
-    vdb_init_1();
+    vdb_init_0();
 
     vec3 origin = get_origin();
     vec3 start_dir = get_dir();

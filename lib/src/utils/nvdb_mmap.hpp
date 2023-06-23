@@ -25,7 +25,9 @@ public:
         type_size type;
     };
 
-    nvdb_mmap(std::string path);
+    explicit nvdb_mmap(const void *);
+
+    explicit nvdb_mmap(std::string path);
 
     const std::vector<grid> &grids() const
     {
@@ -36,11 +38,20 @@ public:
 
     size_t mem_size() const
     {
-        return _source.size();
+        return _in_memory ? _in_memory_size : _source.size();
+    }
+
+    size_t base_offset()
+    {
+        return reinterpret_cast<const char *>(_grids.front().ptr) - _source.data();
     }
 
 private:
+    size_t _in_memory_size = 0;
+
     std::vector<grid> _grids;
     mio::mmap_source _source;
+
+    bool _in_memory = false;
 };
 } // namespace utils

@@ -13,8 +13,9 @@ public:
     void schedule_frame(scene::object_context &, int block_number, int frame_number) override;
 
     void init(scene::object_context &) override;
+    void on_destroy(scene::object_context &) override;
 
-    const char* class_name() override;
+    const char *class_name() override;
 
 private:
     std::filesystem::path _resource_directory;

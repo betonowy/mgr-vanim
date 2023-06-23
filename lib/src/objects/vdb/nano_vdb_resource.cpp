@@ -1,7 +1,10 @@
 #include "nano_vdb_resource.hpp"
 
+#include <converter/nvdb_compressor.hpp>
+#include <dvdb/types.hpp>
 #include <scene/object_context.hpp>
 #include <utils/future_helpers.hpp>
+#include <utils/gpu_memcpy.hpp>
 #include <utils/memory_counter.hpp>
 #include <utils/nvdb_mmap.hpp>
 #include <utils/thread_pool.hpp>
@@ -14,9 +17,14 @@
 
 namespace objects::vdb
 {
-const char* nano_vdb_resource::class_name()
+const char *nano_vdb_resource::class_name()
 {
     return "NanoVDB Animation";
+}
+
+void nano_vdb_resource::on_destroy(scene::object_context &ctx)
+{
+    ctx.generic_thread_pool().finish();
 }
 
 nano_vdb_resource::nano_vdb_resource(std::filesystem::path path)
@@ -81,52 +89,13 @@ void nano_vdb_resource::init(scene::object_context &ctx)
 
     for (const auto &[n, path] : _nvdb_frames)
     {
-        utils::nvdb_mmap nvdb_mmap(path.string());
-        const auto &grids = nvdb_mmap.grids();
+        mio::mmap_source mmap(path.c_str());
 
-        size_t buffer_size = 0;
+        const auto header = reinterpret_cast<const dvdb::headers::nvdb_block_description *>(mmap.data());
 
-        std::vector<std::string> converted_names;
-
-        for (const auto &[_, size, name, type] : grids)
+        if (header->uncompressed_size > max_buffer_size)
         {
-            buffer_size += size;
-
-            std::string converted_name;
-
-            switch (type)
-            {
-            case utils::nvdb_mmap::grid::type_size::unsupported:
-                converted_name = "unsupported format";
-                break;
-            case utils::nvdb_mmap::grid::type_size::f32:
-                converted_name = "float32";
-                break;
-            case utils::nvdb_mmap::grid::type_size::f16:
-                converted_name = "float16";
-                break;
-            case utils::nvdb_mmap::grid::type_size::f8:
-                converted_name = "float8";
-                break;
-            case utils::nvdb_mmap::grid::type_size::f4:
-                converted_name = "float4";
-                break;
-            case utils::nvdb_mmap::grid::type_size::fn:
-                converted_name = "variable bit float";
-                break;
-            }
-
-            converted_name += ": ";
-            converted_name += name;
-
-            converted_names.emplace_back(std::move(converted_name));
-
-            set_grid_names(std::move(converted_names));
-        }
-
-        if (buffer_size > max_buffer_size)
-        {
-            max_buffer_size = buffer_size;
+            max_buffer_size = header->uncompressed_size;
         }
 
         _frames.emplace_back(frame{
@@ -174,19 +143,18 @@ void nano_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
         }
 
         auto map_t1 = std::chrono::steady_clock::now();
-        utils::nvdb_mmap nvdb_file(_nvdb_frames[frame_number].second.string());
-        const auto &grids = nvdb_file.grids();
+
+        std::vector<char> mid_buffer(_ssbo_block_size);
+        offsets = converter::unpack_nvdb_file(_nvdb_frames[frame_number].second.c_str(), mid_buffer.data(), _ssbo_block_size, &copy_size);
+
         auto map_t2 = std::chrono::steady_clock::now();
 
         utils::update_map_time(std::chrono::duration_cast<std::chrono::microseconds>(map_t2 - map_t1).count());
 
         auto copy_t1 = std::chrono::steady_clock::now();
-        for (size_t i = 0; i < grids.size(); ++i)
-        {
-            offsets[i] = copy_size;
-            std::memcpy(_ssbo_ptr + copy_size + block_number * _ssbo_block_size, grids[i].ptr, grids[i].size);
-            copy_size += grids[i].size;
-        }
+
+        utils::gpu_memcpy(_ssbo_ptr + _ssbo_block_size * block_number, mid_buffer.data(), copy_size);
+
         auto copy_t2 = std::chrono::steady_clock::now();
 
         utils::update_copy_time(std::chrono::duration_cast<std::chrono::microseconds>(copy_t2 - copy_t1).count());

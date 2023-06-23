@@ -5,7 +5,7 @@
 namespace scene
 {
 object_context::object_context()
-    : _cpu_thread_pool(std::make_shared<utils::thread_pool>(std::thread::hardware_concurrency() - 1))
+    : _cpu_thread_pool(std::make_shared<utils::thread_pool>(std::thread::hardware_concurrency()))
 {
 }
 

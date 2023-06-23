@@ -8,9 +8,12 @@
 
 namespace converter
 {
-int pack_file(const char *filename)
+int pack_dvdb_file(const char *filename)
 {
     mio::mmap_source mmap(filename);
+
+    const auto dvdb_header = reinterpret_cast<const dvdb::headers::main *>(mmap.data());
+
     std::vector<char> output_buffer(mmap.size());
 
     int compressed = dvdb::compress_stream(mmap.data(), mmap.size(), output_buffer.data(), output_buffer.size());
@@ -21,28 +24,29 @@ int pack_file(const char *filename)
     }
 
     dvdb::headers::block_description header{
-        .dct_data_compressed_size = static_cast<uint64_t>(compressed),
-        .dct_data_uncompressed_size = mmap.size(),
+        .compressed_size = static_cast<uint64_t>(compressed),
+        .uncompressed_size = dvdb_header->vdb_required_size,
     };
 
     mmap.unmap();
 
     std::ofstream file(filename, std::ios::binary);
+    
     file.write(reinterpret_cast<char *>(&header), sizeof(header));
     file.write(output_buffer.data(), compressed);
 
     return compressed;
 }
 
-std::vector<char> unpack_file(const char *filename)
+std::vector<char> unpack_dvdb_file(const char *filename)
 {
     mio::mmap_source mmap(filename);
 
     const auto *header = reinterpret_cast<const dvdb::headers::block_description *>(mmap.data());
     const char *data_begin = mmap.data() + sizeof(*header);
 
-    std::vector<char> output(header->dct_data_uncompressed_size);
-    int decompressed = dvdb::decompress_stream(data_begin, header->dct_data_compressed_size, output.data(), output.size());
+    std::vector<char> output(header->uncompressed_size);
+    int decompressed = dvdb::decompress_stream(data_begin, header->compressed_size, output.data(), output.size());
 
     if (decompressed < 0)
     {

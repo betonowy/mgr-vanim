@@ -39,9 +39,9 @@ void map_values(float src_a, float src_b, float dst_a, float dst_b, const cube_8
     }
 }
 
-static constexpr auto range_a = 1;
-static constexpr float gamma = 0.87f;  // magic value - don't touch - somehow improves mean squared errors
-static constexpr int start_record = 1; // don't gamma correct first value (base component)
+static constexpr auto range_a = 1e-5; // zero - safeguard against floating point inaccuracy
+// static constexpr float gamma = 0.87f;  // magic value - don't touch - somehow improves mean squared error
+// static constexpr int start_record = 1; // don't gamma correct first value (base component)
 
 void encode_derivative_to_i8(const cube_888_f32 *src, cube_888_i8 *der, float *max, float *min, uint8_t quantization_limit)
 {
@@ -99,6 +99,16 @@ void encode_to_i8(const cube_888_f32 *src, cube_888_i8 *dst, float *max, float *
     for (int i = 0; i < std::size(dst->values); ++i)
     {
         dst->values[i] = std::round(mid.values[i]);
+
+        // TODO Can different rounding reduce error?
+        // if (src->values[i] > 0)
+        // {
+        //     dst->values[i] = std::floor(mid.values[i]);
+        // }
+        // else
+        // {
+        //     dst->values[i] = std::ceil(mid.values[i]);
+        // }
     }
 }
 

@@ -47,9 +47,9 @@ convert_vdb_nvdb::job_result convert_vdb_nvdb_job(std::vector<std::filesystem::p
         return convert_vdb_nvdb_job(std::move(files), initial_count, thread_pool, format, error_method, error);
     };
 
-    const auto converter_status = converter::convert_to_nvdb(file, format, error, error_method);
-
     res.next_job = std::make_unique<decltype(res.next_job)::element_type>(thread_pool->enqueue(std::move(next_job)));
+
+    const auto converter_status = converter::convert_to_nvdb(file, format, error, error_method);
 
     if (!converter_status.success)
     {
@@ -99,7 +99,7 @@ void convert_vdb_nvdb::update(scene::object_context &ctx, float)
 {
     if (_current_status.finished)
     {
-        ctx.add_object(std::make_shared<popup>(u8"Success", std::u8string(reinterpret_cast<const char8_t*>(_current_status.description.c_str()))));
+        ctx.add_object(std::make_shared<popup>(u8"Success", std::u8string(reinterpret_cast<const char8_t *>(_current_status.description.c_str()))));
         return destroy();
     }
 
@@ -109,7 +109,7 @@ void convert_vdb_nvdb::update(scene::object_context &ctx, float)
 
         if (!job_result.error.empty())
         {
-            ctx.add_object(std::make_shared<popup>(u8"Error", reinterpret_cast<const char8_t*>(job_result.error.c_str())));
+            ctx.add_object(std::make_shared<popup>(u8"Error", reinterpret_cast<const char8_t *>(job_result.error.c_str())));
             return destroy();
         }
 

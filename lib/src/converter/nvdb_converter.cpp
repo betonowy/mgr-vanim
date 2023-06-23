@@ -1,9 +1,12 @@
 #include "nvdb_converter.hpp"
 
+#include <mio/mmap.hpp>
 #include <nanovdb/NanoVDB.h>
 #include <nanovdb/util/IO.h>
 #include <nanovdb/util/OpenToNanoVDB.h>
 #include <openvdb/openvdb.h>
+
+#include "nvdb_compressor.hpp"
 
 #include <thread>
 
@@ -97,6 +100,8 @@ conversion_result convert_to_nvdb(std::filesystem::path path, nvdb_format format
 
         nanovdb::io::writeGrids<nanovdb::HostBuffer, std::vector>(nvdb_path.string(), nano_grids);
     }
+
+    converter::pack_nvdb_file(nvdb_path.c_str());
 
     return res.message = nvdb_path.string(), res.success = true, res;
 }

@@ -21,11 +21,6 @@ public:
     void init(scene::object_context &) override;
     void update(scene::object_context &, float) override;
 
-    struct job_data
-    {
-        std::filesystem::path path;
-    };
-
     struct job_result
     {
         std::unique_ptr<std::future<job_result>> next_job;

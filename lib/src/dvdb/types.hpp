@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdint>
 
+#include <glm/vec4.hpp>
+
 // Not thoroughly tested. If this breaks, just define an empty macro.
 #ifndef _WIN32
 #define dvdb_restrict __restrict__
@@ -74,10 +76,20 @@ struct main
     } frames[MAX_SUPPORTED_GRID_COUNT];
 };
 
+struct nvdb_block_description
+{
+    uint64_t compressed_size;
+    uint64_t uncompressed_size;
+    glm::uvec4 offsets;
+    int alignment_correction;
+
+    int _padding[7];
+};
+
 struct block_description
 {
-    uint64_t dct_data_compressed_size;
-    uint64_t dct_data_uncompressed_size;
+    uint64_t compressed_size;
+    uint64_t uncompressed_size;
 };
 } // namespace headers
 
@@ -104,7 +116,32 @@ struct rotation_offset
 
 struct fma
 {
-    float add, multiply;
+    static constexpr auto range = 127;
+    static constexpr auto float_to_code = std::numeric_limits<int16_t>::max() / static_cast<float>(range);
+    static constexpr auto code_to_float = 1 / float_to_code;
+
+    int16_t add, multiply;
+
+    static fma from_float(float add, float mul)
+    {
+        return {
+            .add = static_cast<int16_t>(add * float_to_code),
+            .multiply = static_cast<int16_t>(mul * float_to_code),
+        };
+    }
+
+    static const auto to_float(struct fma code)
+    {
+        struct fma_float
+        {
+            float add, multiply;
+        };
+
+        return fma_float{
+            .add = code.add * code_to_float,
+            .multiply = code.multiply * code_to_float,
+        };
+    }
 };
 
 struct map
