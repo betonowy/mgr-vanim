@@ -4,6 +4,7 @@
 #include <nanovdb/NanoVDB.h>
 #include <nanovdb/util/IO.h>
 #include <nanovdb/util/OpenToNanoVDB.h>
+#include <nanovdb/util/NanoToOpenVDB.h>
 #include <openvdb/openvdb.h>
 
 #include "nvdb_compressor.hpp"
@@ -43,6 +44,11 @@ conversion_result convert_to_nvdb(std::filesystem::path path, nvdb_format format
 
         for (auto name_it = file.beginName(); name_it != file.endName(); ++name_it)
         {
+            if (name_it.gridName() != "density")
+            {
+                continue;
+            }
+
             auto grid = file.readGrid(name_it.gridName());
 
             if (auto ovdb = openvdb::GridBase::grid<openvdb::FloatGrid>(grid))
@@ -92,7 +98,8 @@ conversion_result convert_to_nvdb(std::filesystem::path path, nvdb_format format
             }
             else
             {
-                throw std::runtime_error("Unsupported OpenVDB grid type. Only float grid is supported.");
+                // throw std::runtime_error("Unsupported OpenVDB grid type. Only float grid is supported.");
+                std::cout << "Skipping unsupported grid: " << int(format) << '\n';
             }
         }
 
@@ -104,5 +111,28 @@ conversion_result convert_to_nvdb(std::filesystem::path path, nvdb_format format
     converter::pack_nvdb_file(nvdb_path.c_str());
 
     return res.message = nvdb_path.string(), res.success = true, res;
+}
+
+std::vector<nanovdb::GridHandle<nanovdb::HostBuffer>> nvdb_to_nvdb_fp8(const char* in)
+{
+    const auto in_grids = nanovdb::io::readGrids(in);
+    std::vector<nanovdb::GridHandle<nanovdb::HostBuffer>> out_grids;
+    out_grids.reserve(in_grids.size());
+
+    for (const auto& in_grid : in_grids)
+    {
+        const auto ovdb = nanovdb::nanoToOpenVDB(in_grid);
+        nanovdb::OpenToNanoVDB<float, nanovdb::Fp8> converter;
+        auto ovdb_float = openvdb::GridBase::grid<openvdb::FloatGrid>(ovdb);
+        out_grids.push_back(converter(*ovdb_float, nanovdb::StatsMode::All, nanovdb::ChecksumMode::Full, 0));
+    }
+
+    for (const auto& out_grid : out_grids)
+    {
+        const auto lol = out_grid.grid<nanovdb::Fp8>();
+        const auto a = lol->gridType();
+    }
+
+    return out_grids;
 }
 } // namespace converter

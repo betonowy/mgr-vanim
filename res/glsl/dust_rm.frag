@@ -154,7 +154,7 @@ float dust_ss_stage_2(vec3 origin, vec3 dir)
 
 #define vdb_number 0
 
-vec4 dust_ss_stage_1(vec3 origin, vec3 dir, vec3 sun_dir, vec3 sun_col)
+vec4 dust_ss_stage_1(vec3 origin, vec3 dir, vec3 sun_dir, vec3 sun_col, int offset)
 {
     pnanovdb_coord_t bbox_min = pnanovdb_root_get_bbox_min(vdb[vdb_number].buf, vdb[vdb_number].accessor.root);
     pnanovdb_coord_t bbox_max = pnanovdb_root_get_bbox_max(vdb[vdb_number].buf, vdb[vdb_number].accessor.root);
@@ -174,7 +174,7 @@ vec4 dust_ss_stage_1(vec3 origin, vec3 dir, vec3 sun_dir, vec3 sun_col)
         return vec4(0);
     }
 
-    pnanovdb_vec3_t pos = pnanovdb_hdda_ray_start(origin, tmin, dir);
+    pnanovdb_vec3_t pos = pnanovdb_hdda_ray_start(origin + get_dither_offset(offset), tmin, dir);
     pnanovdb_coord_t ijk = pnanovdb_hdda_pos_to_ijk(PNANOVDB_REF(pos));
 
     uint level;
@@ -197,7 +197,7 @@ vec4 dust_ss_stage_1(vec3 origin, vec3 dir, vec3 sun_dir, vec3 sun_col)
     while (hdda.tmin < hdda.tmax)
     {  
         hdda.tmin += step_length;
-        pnanovdb_vec3_t pos = pnanovdb_hdda_ray_start(origin, hdda.tmin, dir); 
+        pnanovdb_vec3_t pos = pnanovdb_hdda_ray_start(origin + get_dither_offset(offset), hdda.tmin, dir); 
 
         ijk = pnanovdb_hdda_pos_to_ijk(PNANOVDB_REF(pos));
         pnanovdb_address_t address = pnanovdb_readaccessor_get_value_address_and_level(vdb[vdb_number].grid_type, vdb[vdb_number].buf, vdb[vdb_number].accessor, PNANOVDB_REF(ijk), PNANOVDB_REF(level));
@@ -289,6 +289,16 @@ void main()
     vec3 sun_dir = normalize(vec3(1.0, -1.0, 1.0));
     vec3 sun_col = vec3(1.0);
 
-    color = dust_ss_stage_1(origin, start_dir, sun_dir, sun_col);
+    color = vec4(0);
+
+    const int iterations = 1;
+
+    for (int i = 0; i < iterations; ++i)
+    {
+        color += dust_ss_stage_1(origin, start_dir, sun_dir, sun_col, i * 37);
+    }
+
+    color /= iterations;
+
     color.a = 1.0;
 }

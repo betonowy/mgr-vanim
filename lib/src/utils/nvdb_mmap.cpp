@@ -4,6 +4,11 @@
 
 #include <array>
 
+namespace
+{
+static constexpr size_t MAX_GRIDS = 4;
+}
+
 namespace utils
 {
 nvdb_mmap::nvdb_mmap(const void *data_ptr)
@@ -13,8 +18,6 @@ nvdb_mmap::nvdb_mmap(const void *data_ptr)
 
     using header_t = nanovdb::io::Header;
     using meta_t = nanovdb::io::MetaData;
-
-    static constexpr size_t MAX_GRIDS = 2;
 
     struct grid_meta_t
     {
@@ -106,8 +109,6 @@ nvdb_mmap::nvdb_mmap(std::string path)
 {
     using header_t = nanovdb::io::Header;
     using meta_t = nanovdb::io::MetaData;
-
-    static constexpr size_t MAX_GRIDS = 2;
 
     struct grid_meta_t
     {

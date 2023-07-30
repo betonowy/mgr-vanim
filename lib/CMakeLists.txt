@@ -79,3 +79,9 @@ vanim_add_test(
     INCLUDES src/dvdb src
     LIBS vanim
 )
+
+vanim_add_test(
+    NAME dvdb_fp8_converter
+    INCLUDES src/dvdb src
+    LIBS nanovdb vanim
+)
