@@ -388,6 +388,72 @@ TEST_CASE("Gradient rotation")
     }
 }
 
+TEST_CASE("Gradient rotation i8")
+{
+    static constexpr glm::vec3 high_coord{24.f, 25.f, 26.f};
+    dvdb::cube_888_i8 cubes[27], rotated;
+    dvdb::cube_888_i8 *cube_ptrs[27];
+
+    for (int i = 0; i < 27; ++i)
+    {
+        cube_ptrs[i] = cubes + i;
+    }
+
+    for (int i = -1; i <= 1; ++i)
+    {
+        for (int j = -1; j <= 1; ++j)
+        {
+            for (int k = -1; k <= 1; ++k)
+            {
+                const auto index = coord_to_neighbor_index(i, j, k);
+
+                for (int x = 0; x < 8; ++x)
+                {
+                    for (int y = 0; y < 8; ++y)
+                    {
+                        for (int z = 0; z < 8; ++z)
+                        {
+                            const auto cube_index = x + (y << 3) + (z << 6);
+
+                            glm::vec3 vcoord = (glm::vec3(i, j, k) + 1.f) * 8.f + glm::vec3(x, y, z);
+
+                            cubes[index].values[cube_index] = 512 * glm::length(vcoord) / glm::length(high_coord);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i <= 16; ++i)
+    {
+        for (int j = 0; j <= 16; ++j)
+        {
+            for (int k = 0; k <= 16; ++k)
+            {
+                const auto index = coord_to_neighbor_index(i, j, k);
+                dvdb::rotate_refill(&rotated, cube_ptrs, -(i - 8), -(j - 8), -(k - 8));
+
+                for (int x = 0; x < 8; ++x)
+                {
+                    for (int y = 0; y < 8; ++y)
+                    {
+                        for (int z = 0; z < 8; ++z)
+                        {
+                            const auto cube_index = x + (y << 3) + (z << 6);
+
+                            glm::vec3 vcoord = glm::vec3(i, j, k) + glm::vec3(x, y, z);
+                            uint8_t expected = 512 * glm::length(vcoord) / glm::length(high_coord);
+
+                            REQUIRE(int(rotated.values[cube_index]) == int(expected));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 TEST_CASE("Gradient rotation mask")
 {
     static constexpr glm::vec3 high_coord{24.f, 25.f, 26.f};
@@ -529,233 +595,233 @@ TEST_CASE("Gradient rotation mask")
 //     CHECK(accumulated_error < 0.005);
 // }
 
-TEST_CASE_METHOD(dvdb_init, "find_similars_brute_force")
-{
-    dvdb::cube_888_f32 cubes[27], dst;
-    dvdb::cube_888_f32 *cube_ptrs[27];
+// TEST_CASE_METHOD(dvdb_init, "find_similars_brute_force")
+// {
+//     dvdb::cube_888_f32 cubes[27], dst;
+//     dvdb::cube_888_f32 *cube_ptrs[27];
 
-    for (int i = 0; i < 27; ++i)
-    {
-        cube_ptrs[i] = cubes + i;
-    }
+//     for (int i = 0; i < 27; ++i)
+//     {
+//         cube_ptrs[i] = cubes + i;
+//     }
 
-    dvdb::cube_888_mask mask;
+//     dvdb::cube_888_mask mask;
 
-    int w0 = 0, w1 = 0, w2 = 0;
+//     int w0 = 0, w1 = 0, w2 = 0;
 
-    std::puts("my, n8, n4, compression_ratio");
+//     std::puts("my, n8, n4, compression_ratio");
 
-    for (int qi = 1; qi < 255; ++qi)
-    {
-        size_t count = 0;
+//     for (int qi = 1; qi < 255; ++qi)
+//     {
+//         size_t count = 0;
 
-        double acc_errorh = 0;
-        double acc_error = 0;
-        double acc_error4 = 0;
-        double acc_error8 = 0;
-        double acc_unmasked_error = 0;
-        double acc_unmasked_error4 = 0;
-        double acc_unmasked_error8 = 0;
+//         double acc_errorh = 0;
+//         double acc_error = 0;
+//         double acc_error4 = 0;
+//         double acc_error8 = 0;
+//         double acc_unmasked_error = 0;
+//         double acc_unmasked_error4 = 0;
+//         double acc_unmasked_error8 = 0;
 
-        std::vector<dvdb::cube_888_i8> dct_cubes;
+//         std::vector<dvdb::cube_888_i8> dct_cubes;
 
-        auto nullnans = [](dvdb::cube_888_f32 *cube) {
-            for (int i = 0; i < std::size(cube->values); ++i)
-            {
-                if (std::isnan(cube->values[i]))
-                {
-                    cube->values[i] = 0;
-                }
-            }
-        };
+//         auto nullnans = [](dvdb::cube_888_f32 *cube) {
+//             for (int i = 0; i < std::size(cube->values); ++i)
+//             {
+//                 if (std::isnan(cube->values[i]))
+//                 {
+//                     cube->values[i] = 0;
+//                 }
+//             }
+//         };
 
-        for (size_t di = 0; di < dst_pos_cubes_vector.size(); ++di)
-        {
-            const auto &dpos = dst_pos_cubes_vector[di].first;
-            const auto &dleaf = dst_pos_cubes_vector[di].second;
+//         for (size_t di = 0; di < dst_pos_cubes_vector.size(); ++di)
+//         {
+//             const auto &dpos = dst_pos_cubes_vector[di].first;
+//             const auto &dleaf = dst_pos_cubes_vector[di].second;
 
-            // if (di > 1000)
-            // {
-            //     continue;
-            // }
+//             // if (di > 1000)
+//             // {
+//             //     continue;
+//             // }
 
-            float sum = 0;
+//             float sum = 0;
 
-            {
-                auto table_address = pnanovdb_leaf_get_table_address(PNANOVDB_GRID_TYPE_FLOAT, dst_buf, dleaf, 0);
-                std::memcpy(&dst, vdb_deref(table_address, dst_buf), sizeof(dst));
-            }
+//             {
+//                 auto table_address = pnanovdb_leaf_get_table_address(PNANOVDB_GRID_TYPE_FLOAT, dst_buf, dleaf, 0);
+//                 std::memcpy(&dst, vdb_deref(table_address, dst_buf), sizeof(dst));
+//             }
 
-            for (int i = 0; i < 512; ++i)
-            {
-                sum += dst.values[i];
-            }
+//             for (int i = 0; i < 512; ++i)
+//             {
+//                 sum += dst.values[i];
+//             }
 
-            // if (sum < 20.0)
-            // {
-            //     continue;
-            // }
+//             // if (sum < 20.0)
+//             // {
+//             //     continue;
+//             // }
 
-            {
-                auto leafptr = reinterpret_cast<pnanovdb_leaf_t *>((dleaf.address.byte_offset >> 2) + dst_buf.data);
-                std::memcpy(&mask, leafptr->value_mask, sizeof(mask));
-            }
+//             {
+//                 auto leafptr = reinterpret_cast<pnanovdb_leaf_t *>((dleaf.address.byte_offset >> 2) + dst_buf.data);
+//                 std::memcpy(&mask, leafptr->value_mask, sizeof(mask));
+//             }
 
-            dvdb::cube_888_f32 fmask = mask.as_values<float, 1, 0>();
+//             dvdb::cube_888_f32 fmask = mask.as_values<float, 1, 0>();
 
-            for (int i = 0; i < MAX_INDEX; ++i)
-            {
-                const auto spos = index_to_coord(i) + dpos;
-                const auto sleaf_it = src_pos_cubes.find(spos);
+//             for (int i = 0; i < MAX_INDEX; ++i)
+//             {
+//                 const auto spos = index_to_coord(i) + dpos;
+//                 const auto sleaf_it = src_pos_cubes.find(spos);
 
-                if (sleaf_it == src_pos_cubes.end())
-                {
-                    std::memset(cubes + i, 0, sizeof(*cubes));
-                    continue;
-                }
+//                 if (sleaf_it == src_pos_cubes.end())
+//                 {
+//                     std::memset(cubes + i, 0, sizeof(*cubes));
+//                     continue;
+//                 }
 
-                auto table_address = pnanovdb_leaf_get_table_address(PNANOVDB_GRID_TYPE_FLOAT, src_buf, sleaf_it->second, 0);
+//                 auto table_address = pnanovdb_leaf_get_table_address(PNANOVDB_GRID_TYPE_FLOAT, src_buf, sleaf_it->second, 0);
 
-                std::memcpy(cubes + i, vdb_deref(table_address, src_buf), sizeof(*cubes));
+//                 std::memcpy(cubes + i, vdb_deref(table_address, src_buf), sizeof(*cubes));
 
-                nullnans(cubes + i);
-            }
+//                 nullnans(cubes + i);
+//             }
 
-            glm::ivec3 rot;
-            dvdb::cube_888_f32 converted;
-            dvdb::cube_888_f32 reference8;
-            dvdb::cube_888_f32 reference4;
-            dvdb::cube_888_i8 h0, h1, h2;
+//             glm::ivec3 rot;
+//             dvdb::cube_888_f32 converted;
+//             dvdb::cube_888_f32 reference8;
+//             dvdb::cube_888_f32 reference4;
+//             dvdb::cube_888_i8 h0, h1, h2;
 
-            // make reference aka NanoVDB
-            {
-                dvdb::cube_888_i8 mid;
-                float min, max;
+//             // make reference aka NanoVDB
+//             {
+//                 dvdb::cube_888_i8 mid;
+//                 float min, max;
 
-                dvdb::encode_derivative_to_i8(&dst, &mid, &max, &min, 0xff);
-                dvdb::decode_derivative_from_i8(&mid, &reference8, max, min, 0xff);
-                h1 = mid;
+//                 dvdb::encode_derivative_to_i8(&dst, &mid, &max, &min, 0xff);
+//                 dvdb::decode_derivative_from_i8(&mid, &reference8, max, min, 0xff);
+//                 h1 = mid;
 
-                dvdb::encode_derivative_to_i8(&dst, &mid, &max, &min, 0x0f);
-                dvdb::decode_derivative_from_i8(&mid, &reference4, max, min, 0x0f);
-                h2 = mid;
+//                 dvdb::encode_derivative_to_i8(&dst, &mid, &max, &min, 0x0f);
+//                 dvdb::decode_derivative_from_i8(&mid, &reference4, max, min, 0x0f);
+//                 h2 = mid;
 
-                dct_cubes.push_back(mid);
-            }
+//                 dct_cubes.push_back(mid);
+//             }
 
-            dvdb::rotate_refill_find_astar(&dst, cubes, {}, &rot.x, &rot.y, &rot.z);
-            dvdb::rotate_refill(&converted, cube_ptrs, rot.x, rot.y, rot.z);
+//             dvdb::rotate_refill_find_astar(&dst, cubes, {}, &rot.x, &rot.y, &rot.z);
+//             dvdb::rotate_refill(&converted, cube_ptrs, rot.x, rot.y, rot.z);
 
-            // std::printf("best rotation: %d %d %d\n", rot.x, rot.y, rot.z);
+//             // std::printf("best rotation: %d %d %d\n", rot.x, rot.y, rot.z);
 
-            // dump("/tmp/sleaf.data", cubes[coord_to_neighbor_index(0, 0, 0)]);
-            // dump("/tmp/dleaf.data", dst);
+//             // dump("/tmp/sleaf.data", cubes[coord_to_neighbor_index(0, 0, 0)]);
+//             // dump("/tmp/dleaf.data", dst);
 
-            float add, mul;
+//             float add, mul;
 
-            dvdb::linear_regression_with_mask(&converted, &dst, &add, &mul, &fmask);
-            dvdb::fma(&converted, &converted, add, mul);
+//             dvdb::linear_regression_with_mask(&converted, &dst, &add, &mul, &fmask);
+//             dvdb::fma(&converted, &converted, add, mul);
 
-            dvdb::cube_888_f32 diff;
+//             dvdb::cube_888_f32 diff;
 
-            dvdb::sub(&dst, &converted, &diff);
-            dvdb::mul(&diff, &fmask, &diff);
+//             dvdb::sub(&dst, &converted, &diff);
+//             dvdb::mul(&diff, &fmask, &diff);
 
-            {
-                dvdb::cube_888_f32 dct;
-                dvdb::cube_888_i8 mid;
-                float min, max;
+//             {
+//                 dvdb::cube_888_f32 dct;
+//                 dvdb::cube_888_i8 mid;
+//                 float min, max;
 
-                uint8_t quant = 0x0f;
+//                 uint8_t quant = 0x0f;
 
-                // dvdb::dct_3d_encode(&diff, &dct);
-                // dvdb::encode_derivative_to_i8(&dct, &mid, &max, &min, quant);
+//                 // dvdb::dct_3d_encode(&diff, &dct);
+//                 // dvdb::encode_derivative_to_i8(&dct, &mid, &max, &min, quant);
 
-                // dct_cubes.push_back(mid);
+//                 // dct_cubes.push_back(mid);
 
-                // dvdb::decode_derivative_from_i8(&mid, &dct, max, min, quant);
-                // dvdb::dct_3d_decode(&dct, &diff);
+//                 // dvdb::decode_derivative_from_i8(&mid, &dct, max, min, quant);
+//                 // dvdb::dct_3d_decode(&dct, &diff);
 
-                dvdb::encode_derivative_to_i8(&diff, &mid, &max, &min, quant);
-                // h0 = mid;
-                dct_cubes.push_back(mid);
-                dvdb::decode_derivative_from_i8(&mid, &diff, max, min, quant);
-            }
+//                 dvdb::encode_derivative_to_i8(&diff, &mid, &max, &min, quant);
+//                 // h0 = mid;
+//                 dct_cubes.push_back(mid);
+//                 dvdb::decode_derivative_from_i8(&mid, &diff, max, min, quant);
+//             }
 
-            dvdb::add(&converted, &diff, &converted);
-            dvdb::mul(&diff, &fmask, &diff);
+//             dvdb::add(&converted, &diff, &converted);
+//             dvdb::mul(&diff, &fmask, &diff);
 
-            if (count == 29)
-            {
-                int _ = 0;
-                // continue;
-            }
+//             if (count == 29)
+//             {
+//                 int _ = 0;
+//                 // continue;
+//             }
 
-            float e0 = dvdb::mean_squared_error_with_mask(&converted, &dst, &fmask);
-            float e1 = dvdb::mean_squared_error_with_mask(&reference8, &dst, &fmask);
-            float e2 = dvdb::mean_squared_error_with_mask(&reference4, &dst, &fmask);
+//             float e0 = dvdb::mean_squared_error_with_mask(&converted, &dst, &fmask);
+//             float e1 = dvdb::mean_squared_error_with_mask(&reference8, &dst, &fmask);
+//             float e2 = dvdb::mean_squared_error_with_mask(&reference4, &dst, &fmask);
 
-            acc_error += e0;
-            acc_error8 += e1;
-            acc_error4 += e2;
+//             acc_error += e0;
+//             acc_error8 += e1;
+//             acc_error4 += e2;
 
-            // if (e0 < e1 && e0 < e2)
-            // {
-            //     ++w0;
-            //     acc_errorh += e0;
-            //     dct_cubes.push_back(h0);
-            // }
-            // else
-            // {
-            //     if (e1 < e2)
-            //     {
-            //         ++w1;
-            //         acc_errorh += e1;
-            //         dct_cubes.push_back(h1);
-            //     }
-            //     else
-            //     {
-            //         ++w2;
-            //         acc_errorh += e2;
-            //         dct_cubes.push_back(h2);
-            //     }
-            // }
+//             // if (e0 < e1 && e0 < e2)
+//             // {
+//             //     ++w0;
+//             //     acc_errorh += e0;
+//             //     dct_cubes.push_back(h0);
+//             // }
+//             // else
+//             // {
+//             //     if (e1 < e2)
+//             //     {
+//             //         ++w1;
+//             //         acc_errorh += e1;
+//             //         dct_cubes.push_back(h1);
+//             //     }
+//             //     else
+//             //     {
+//             //         ++w2;
+//             //         acc_errorh += e2;
+//             //         dct_cubes.push_back(h2);
+//             //     }
+//             // }
 
-            acc_unmasked_error += dvdb::mean_squared_error(&converted, &dst);
-            acc_unmasked_error8 += dvdb::mean_squared_error(&reference8, &dst);
-            acc_unmasked_error4 += dvdb::mean_squared_error(&reference4, &dst);
+//             acc_unmasked_error += dvdb::mean_squared_error(&converted, &dst);
+//             acc_unmasked_error8 += dvdb::mean_squared_error(&reference8, &dst);
+//             acc_unmasked_error4 += dvdb::mean_squared_error(&reference4, &dst);
 
-            ++count;
-        }
+//             ++count;
+//         }
 
-        acc_error /= count;
-        acc_error8 /= count;
-        acc_error4 /= count;
+//         acc_error /= count;
+//         acc_error8 /= count;
+//         acc_error4 /= count;
 
-        acc_unmasked_error /= count;
-        acc_unmasked_error8 /= count;
-        acc_unmasked_error4 /= count;
+//         acc_unmasked_error /= count;
+//         acc_unmasked_error8 /= count;
+//         acc_unmasked_error4 /= count;
 
-        std::printf("%f, ", sqrt(acc_error));
-        std::printf("%f, ", sqrt(acc_error8));
-        std::printf("%f, ", sqrt(acc_error4));
+//         std::printf("%f, ", sqrt(acc_error));
+//         std::printf("%f, ", sqrt(acc_error8));
+//         std::printf("%f, ", sqrt(acc_error4));
 
-        // std::printf("final mine error == %f\n", sqrt(acc_error));
-        // std::printf("final 8bit error == %f\n", sqrt(acc_error8));
-        // std::printf("final 4bit error == %f\n", sqrt(acc_error4));
+//         // std::printf("final mine error == %f\n", sqrt(acc_error));
+//         // std::printf("final 8bit error == %f\n", sqrt(acc_error8));
+//         // std::printf("final 4bit error == %f\n", sqrt(acc_error4));
 
-        // std::printf("unmasked mine error == %f\n", sqrt(acc_unmasked_error));
-        // std::printf("unmasked 8bit error == %f\n", sqrt(acc_unmasked_error8));
-        // std::printf("unmasked 4bit error == %f\n", sqrt(acc_unmasked_error4));
+//         // std::printf("unmasked mine error == %f\n", sqrt(acc_unmasked_error));
+//         // std::printf("unmasked 8bit error == %f\n", sqrt(acc_unmasked_error8));
+//         // std::printf("unmasked 4bit error == %f\n", sqrt(acc_unmasked_error4));
 
-        // compression test
-        std::vector<char> buffer(dct_cubes.size() * 512);
+//         // compression test
+//         std::vector<char> buffer(dct_cubes.size() * 512);
 
-        int compressed_size = dvdb::compress_stream(reinterpret_cast<char *>(dct_cubes.data()), dct_cubes.size() * 512, buffer.data(), buffer.size());
+//         int compressed_size = dvdb::compress_stream(reinterpret_cast<char *>(dct_cubes.data()), dct_cubes.size() * 512, buffer.data(), buffer.size());
 
-        std::printf("%f\n", dct_cubes.size() * 512.f / compressed_size);
-        // std::printf("w0: %d, w1: %d, w2: %d\n", w0, w1, w2);
+//         std::printf("%f\n", dct_cubes.size() * 512.f / compressed_size);
+//         // std::printf("w0: %d, w1: %d, w2: %d\n", w0, w1, w2);
 
-        break;
-    }
-}
+//         break;
+//     }
+// }

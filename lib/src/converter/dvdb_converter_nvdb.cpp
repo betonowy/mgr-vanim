@@ -60,14 +60,13 @@ void nvdb_reader::initialize(void *grid_ptr)
     const pnanovdb_grid_handle_t grid{};
     const auto tree = pnanovdb_grid_get_tree(_buf, grid);
     const auto root = pnanovdb_tree_get_root(_buf, tree);
-
     const auto type = pnanovdb_grid_get_grid_type(_buf, grid);
 
     _leaf_handles.reserve(pnanovdb_tree_get_node_count_leaf(_buf, tree));
 
-    if (type != PNANOVDB_GRID_TYPE_FLOAT)
+    if (type != PNANOVDB_GRID_TYPE_FP8)
     {
-        throw std::runtime_error("Expects only f32 grid.");
+        throw std::runtime_error("Expects only f8 grid.");
     }
 
     auto tile_count = pnanovdb_root_get_tile_count(_buf, root);
@@ -164,7 +163,7 @@ constexpr glm::ivec3 index_to_diff_coord(int i)
 }
 } // namespace
 
-void nvdb_reader::leaf_neighbors(glm::ivec3 coord, dvdb::cube_888_f32 **values, dvdb::cube_888_mask **masks, dvdb::cube_888_f32 *empty_values, dvdb::cube_888_mask *empty_mask) const
+void nvdb_reader::leaf_neighbors(glm::ivec3 coord, const dvdb::cube_888_i8 **values, const dvdb::cube_888_mask **masks, const dvdb::cube_888_i8 *empty_values, const dvdb::cube_888_mask *empty_mask) const
 {
     for (int i = 0; i < 3 * 3 * 3; ++i)
     {

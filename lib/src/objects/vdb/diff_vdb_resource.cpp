@@ -149,14 +149,14 @@ T read(uint8_t *&data)
 }
 
 static dvdb::cube_888_mask empty_mask{};
-static dvdb::cube_888_f32 empty_values{};
+static dvdb::cube_888_i8 empty_values{};
 
 void grid_reconstruction_worker(int index, void *diff_ptr, int bundle_size, const converter::nvdb_reader &dst_accessor, const converter::nvdb_reader &src_accessor)
 {
     auto *diff_current_ptr = reinterpret_cast<uint8_t *>(diff_ptr);
 
-    dvdb::cube_888_f32 *src_neighbor_values_ptrs[27];
-    dvdb::cube_888_mask *src_neighbor_masks_ptrs[27];
+    const dvdb::cube_888_i8 *src_neighbor_values_ptrs[27];
+    const dvdb::cube_888_mask *src_neighbor_masks_ptrs[27];
 
     for (int i = 0; i < bundle_size; ++i)
     {
@@ -166,19 +166,48 @@ void grid_reconstruction_worker(int index, void *diff_ptr, int bundle_size, cons
 
         auto dst_ptr = dst_accessor.leaf_table_ptr(i + index);
         auto dst_mask_ptr = dst_accessor.leaf_bitmask_ptr(i + index);
+        auto [dst_min, dst_quantum] = dst_accessor.leaf_min_quantum_ptrs(i + index);
 
         dvdb::cube_888_f32 dst;
         dvdb::cube_888_mask dst_mask;
 
+        auto nancheck = [](dvdb::cube_888_f32& cube){
+            for (auto& v : cube.values)
+            {
+                if (std::isnan(v))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        auto nancheck2 = [](float v)
+        {
+            if (std::isnan(v))
+            {
+                return true;
+            }
+
+            return false;
+        };
+
         if (setup.has_source && setup.has_rotation)
         {
             const auto source = read<dvdb::code_points::source_key>(diff_current_ptr);
+            const auto index = src_accessor.get_leaf_index_from_key(source);
 
             const auto [x, y, z] = read<dvdb::code_points::rotation_offset>(diff_current_ptr);
 
             src_accessor.leaf_neighbors(source, src_neighbor_values_ptrs, src_neighbor_masks_ptrs, &empty_values, &empty_mask);
+            auto [src_min, src_quantum] = src_accessor.leaf_min_quantum(index);
 
-            dvdb::rotate_refill(&dst, src_neighbor_values_ptrs, x, y, z);
+            {
+                dvdb::cube_888_i8 decoder;
+                dvdb::rotate_refill(&decoder, src_neighbor_values_ptrs, x, y, z);
+                dvdb::decode_from_i8(&decoder, &dst, src_quantum, src_min, 0xff);
+            }
 
             if (!setup.has_fma_and_new_mask)
             {
@@ -199,8 +228,10 @@ void grid_reconstruction_worker(int index, void *diff_ptr, int bundle_size, cons
             {
                 const auto src = src_accessor.leaf_table_ptr(index);
                 const auto src_mask = src_accessor.leaf_bitmask_ptr(index);
+                const auto [min, quantum] = src_accessor.leaf_min_quantum(index);
 
-                dst = *src;
+                dvdb::decode_from_i8(src, &dst, quantum, min, 0xff);
+                // dst = *src;
 
                 if (!setup.has_fma_and_new_mask)
                 {
@@ -220,18 +251,23 @@ void grid_reconstruction_worker(int index, void *diff_ptr, int bundle_size, cons
 
         if (setup.has_fma_and_new_mask)
         {
+            dst_mask = read<dvdb::cube_888_mask>(diff_current_ptr);
+
             const auto [add, mul] = dvdb::code_points::fma::to_float(read<dvdb::code_points::fma>(diff_current_ptr));
             dvdb::fma(&dst, &dst, add, mul);
-
-            dst_mask = read<dvdb::cube_888_mask>(diff_current_ptr);
         }
 
-        *dst_ptr = dst;
+        dvdb::encode_to_i8(&dst, dst_ptr, dst_quantum, dst_min, 0xff);
+        // *dst_ptr = dst;
         *dst_mask_ptr = dst_mask;
+
+        continue;
 
         if (!setup.has_values)
         {
-
+            nancheck(dst);
+            nancheck2(*dst_min);
+            nancheck2(*dst_quantum);
             continue;
         }
 
@@ -243,7 +279,7 @@ void grid_reconstruction_worker(int index, void *diff_ptr, int bundle_size, cons
                 return read<dvdb::code_points::map>(diff_current_ptr);
             }
 
-            return dvdb::code_points::map{.min = 0.f, .max = 1.f};
+            return dvdb::code_points::map{.min = 0.f, .quantum = 1.f};
         }();
 
         dvdb::cube_888_i8 encoder_values = read<dvdb::cube_888_i8>(diff_current_ptr);
@@ -271,12 +307,18 @@ void grid_reconstruction_worker(int index, void *diff_ptr, int bundle_size, cons
 
         if (setup.has_diff)
         {
-            dvdb::add(&dst, &values, dst_ptr);
+            dvdb::add(&dst, &values, &values);
+            dvdb::encode_to_i8(&values, dst_ptr, dst_quantum, dst_min, 0xff);
         }
         else
         {
-            *dst_ptr = values;
+            dvdb::encode_to_i8(&values, dst_ptr, dst_quantum, dst_min, 0xff);
+            // *dst_ptr = values;
         }
+
+        nancheck(values);
+        nancheck2(*dst_min);
+        nancheck2(*dst_quantum);
 
         *dst_mask_ptr = dst_mask;
     }

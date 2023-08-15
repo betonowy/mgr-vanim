@@ -46,6 +46,39 @@ void rotate_internal(const cube_888_mask *src, cube_888_mask *dst, int ox, int o
     }
 }
 
+void rotate_internal(const cube_888_i8 *src, cube_888_i8 *dst, int ox, int oy, int oz)
+{
+    ox = -ox & 0b111;
+    oy &= 0b111;
+    oz &= 0b111;
+
+    auto cube8index = [](unsigned x, unsigned y, unsigned z) {
+        return x + 8 * y + 8 * 8 * z;
+    };
+
+    auto cube8index_wrapped = [](unsigned x, unsigned y, unsigned z) {
+        return ((x & 7) + 8 * (y & 7) + 8 * 8 * (z & 7));
+    };
+
+#pragma GCC unroll 8
+    for (int z = 0; z < 8; ++z)
+    {
+#pragma GCC unroll 8
+        for (int y = 0; y < 8; ++y)
+        {
+            auto input = ((uint64_t *)src) + cube8index(y, z, 0);
+            auto output = ((uint64_t *)dst) + cube8index_wrapped(y + oy, z + oz, 0);
+
+            uint8_t expected = *output;
+
+            uint64_t tmp = *input;
+            tmp = std::rotr(tmp, ox * 8);
+
+            *output = tmp;
+        }
+    }
+}
+
 void rotate_internal(const cube_888_f32 *src, cube_888_f32 *dst, int ox, int oy, int oz)
 {
     ox = -ox & 0b111;
@@ -174,7 +207,7 @@ consteval dvdb::cube_888_f32 filled_cube(float value)
 
 static constexpr dvdb::cube_888_f32 default_mask = filled_cube(1);
 
-float rotate_refill_find_astar(const cube_888_f32 *dst, const cube_888_f32 *dst_mask, cube_888_f32 *src[27], int *x, int *y, int *z)
+float rotate_refill_find_astar(const cube_888_f32 *dst, const cube_888_f32 *dst_mask, const cube_888_f32 *src[27], int *x, int *y, int *z)
 {
     cube_888_f32 test;
     float test_error_pre_fma[27];
@@ -225,7 +258,7 @@ float rotate_refill_find_astar(const cube_888_f32 *dst, const cube_888_f32 *dst_
     }
 }
 
-float rotate_refill_find_brute_force(const cube_888_f32 *dst, const cube_888_f32 *dst_mask, cube_888_f32 *src[27], int *x, int *y, int *z)
+float rotate_refill_find_brute_force(const cube_888_f32 *dst, const cube_888_f32 *dst_mask, const cube_888_f32 *src[27], int *x, int *y, int *z)
 {
     cube_888_f32 test;
     float best = std::numeric_limits<float>::max();
@@ -288,7 +321,7 @@ void range_copy(T *dst, const T *src, int x, int y, int z)
 }
 
 template <typename T>
-void rotate_refill_impl(T *dst, T *src[27], int x, int y, int z)
+void rotate_refill_impl(T *dst, const T *src[27], int x, int y, int z)
 {
     auto dir_of = [](int v) { return v < 0 ? 1 : (v > 0 ? -1 : 0); };
 
@@ -340,12 +373,17 @@ void rotate_refill_impl(T *dst, T *src[27], int x, int y, int z)
     }
 }
 
-void rotate_refill(cube_888_mask *dst, cube_888_mask *src[27], int x, int y, int z)
+void rotate_refill(cube_888_mask *dst, const cube_888_mask *src[27], int x, int y, int z)
 {
     rotate_refill_impl(dst, src, x, y, z);
 }
 
-void rotate_refill(cube_888_f32 *dst, cube_888_f32 *src[27], int x, int y, int z)
+void rotate_refill(cube_888_i8 *dst, const cube_888_i8 *src[27], int x, int y, int z)
+{
+    rotate_refill_impl(dst, src, x, y, z);
+}
+
+void rotate_refill(cube_888_f32 *dst, const cube_888_f32 *src[27], int x, int y, int z)
 {
     rotate_refill_impl(dst, src, x, y, z);
 }

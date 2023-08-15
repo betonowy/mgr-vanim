@@ -195,7 +195,7 @@ vec4 dust_ss_stage_1(vec3 origin, vec3 dir, vec3 sun_dir, vec3 sun_col, int offs
     float step_length = 0.5;
 
     while (hdda.tmin < hdda.tmax)
-    {  
+    {
         hdda.tmin += step_length;
         pnanovdb_vec3_t pos = pnanovdb_hdda_ray_start(origin + get_dither_offset(offset), hdda.tmin, dir); 
 
@@ -213,6 +213,11 @@ vec4 dust_ss_stage_1(vec3 origin, vec3 dir, vec3 sun_dir, vec3 sun_col, int offs
         }
 
         float v = pnanovdb_root_read_float_typed(vdb[vdb_number].grid_type, vdb[vdb_number].buf, address, ijk, level);
+
+        if (v < 0)
+        {
+            v = 0;
+        }
 
         // acc_density += v * 0.05;
 

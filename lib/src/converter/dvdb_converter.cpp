@@ -2,6 +2,7 @@
 #include "dvdb_compressor.hpp"
 #include "dvdb_converter_nvdb.hpp"
 #include "nvdb_compressor.hpp"
+#include "nvdb_converter.hpp"
 
 #include <dvdb/common.hpp>
 #include <dvdb/compression.hpp>
@@ -84,7 +85,7 @@ size_t vdb_get_upper_leaf_count(pnanovdb_buf_t buf, pnanovdb_upper_handle_t uppe
     {
         if (pnanovdb_upper_get_child_mask(buf, upper, i))
         {
-            count += vdb_get_lower_leaf_count(buf, pnanovdb_upper_get_child(PNANOVDB_GRID_TYPE_FLOAT, buf, upper, i));
+            count += vdb_get_lower_leaf_count(buf, pnanovdb_upper_get_child(PNANOVDB_GRID_TYPE_FP8, buf, upper, i));
         }
     }
 
@@ -98,7 +99,7 @@ size_t vdb_get_tile_leaf_count(pnanovdb_buf_t buf, pnanovdb_root_handle_t root, 
         return 0;
     }
 
-    return vdb_get_upper_leaf_count(buf, pnanovdb_root_get_child(PNANOVDB_GRID_TYPE_FLOAT, buf, root, tile));
+    return vdb_get_upper_leaf_count(buf, pnanovdb_root_get_child(PNANOVDB_GRID_TYPE_FP8, buf, root, tile));
 }
 } // namespace details
 
@@ -111,7 +112,7 @@ size_t vdb_get_actual_leaf_count(pnanovdb_buf_t buf, pnanovdb_tree_handle_t tree
 
     for (size_t i = 0; i < tile_count; ++i)
     {
-        count += details::vdb_get_tile_leaf_count(buf, root, pnanovdb_root_get_tile(PNANOVDB_GRID_TYPE_FLOAT, root, i));
+        count += details::vdb_get_tile_leaf_count(buf, root, pnanovdb_root_get_tile(PNANOVDB_GRID_TYPE_FP8, root, i));
     }
 
     return count;
@@ -123,11 +124,15 @@ struct encoder_context
 
     size_t written = 0;
     uint8_t buffer[1024];
-
-    dvdb::cube_888_mask *dst_mask, *final_mask, *src_neighborhood_masks[27];
-    dvdb::cube_888_f32 *dst, *final, *src_neighborhood[27], dst_fmask;
-
     uint64_t key;
+
+    dvdb::cube_888_mask *dst_mask, *final_mask;
+    const dvdb::cube_888_mask *src_neighborhood_masks[27]{};
+    dvdb::cube_888_i8 *dst, *final, dst_fmask;
+    const dvdb::cube_888_i8 *src_neighborhood[27]{};
+    dvdb::cube_888_f32 fdst, ffinal, fdst_fmask, fsrc_neighborhood[27];
+    const dvdb::cube_888_f32 *fsrc_neighborhood_ptr[27]{};
+    float *dst_min, *dst_quantum, *final_min, *final_quantum, src_min[27], src_quantum[27];
 };
 
 void vdb_encode(encoder_context *ctx, float max_error)
@@ -164,28 +169,45 @@ void vdb_encode(encoder_context *ctx, float max_error)
         ctx->written += sizeof(object);
     };
 
+    {
+        dvdb::decode_from_i8(ctx->dst, &ctx->fdst, *ctx->dst_quantum, *ctx->dst_min, 0xff);
+
+        for (int i = 0; i < std::size(ctx->src_neighborhood); ++i)
+        {
+            dvdb::decode_from_i8(ctx->src_neighborhood[i], ctx->fsrc_neighborhood + i, ctx->src_quantum[i], ctx->src_min[i], 0xff);
+            ctx->fsrc_neighborhood_ptr[i] = ctx->fsrc_neighborhood + i;
+        }
+
+        dvdb::from_i8(&ctx->dst_fmask, &ctx->fdst_fmask);
+    }
+
     // determine if copy is even needed
-    float error_empty = dvdb::mean_squared_error_with_mask(&empty_values_f32, ctx->dst, &ctx->dst_fmask);
+    // float error_empty = dvdb::mean_squared_error_with_mask(&empty_values_f32, &ctx->fdst, &ctx->fdst_fmask);
 
     glm::ivec3 rotation{};
 
     // rotated source copy
-    // float error_rotation_only = dvdb::rotate_refill_find_astar(ctx->dst, {}, ctx->src_neighborhood, &rotation.x, &rotation.y, &rotation.z);
+    float error_rotation_only_float = dvdb::rotate_refill_find_astar(&ctx->fdst, {}, ctx->fsrc_neighborhood_ptr, &rotation.x, &rotation.y, &rotation.z);
 
-    dvdb::cube_888_f32 rotated;
-    dvdb::cube_888_mask rotated_mask;
+    dvdb::cube_888_i8 processed_i8;
+    dvdb::cube_888_f32 processed_f32;
+    dvdb::cube_888_mask processed_mask;
+    dvdb::cube_888_f32 processed_fmask;
 
-    dvdb::rotate_refill(&rotated, ctx->src_neighborhood, rotation.x, rotation.y, rotation.z);
-    dvdb::rotate_refill(&rotated_mask, ctx->src_neighborhood_masks, rotation.x, rotation.y, rotation.z);
+    dvdb::rotate_refill(&processed_i8, ctx->src_neighborhood, rotation.x, rotation.y, rotation.z);
+    dvdb::rotate_refill(&processed_mask, ctx->src_neighborhood_masks, rotation.x, rotation.y, rotation.z);
+    dvdb::decode_from_i8(&processed_i8, &processed_f32, ctx->src_min[13], ctx->src_quantum[13], 0xff);
+    processed_fmask = processed_mask.as_values<float, 1, 0>();
 
-    float error_rotation_only = 9099;
+    float error_rotation_only = dvdb::mean_squared_error_with_mask(&ctx->fdst, &processed_f32, &ctx->fdst_fmask);
 
-    if (error_rotation_only < max_error)
+    if (true)
     {
         write(dvdb::code_points::setup{
             .has_source = true,
             .has_rotation = rotation != glm::ivec3(0),
         });
+
         write(dvdb::code_points::source_key{
             ctx->key,
         });
@@ -199,17 +221,16 @@ void vdb_encode(encoder_context *ctx, float max_error)
             });
         }
 
-        *ctx->final = rotated;
-        *ctx->final_mask = rotated_mask;
+        dvdb::encode_to_i8(&processed_f32, ctx->final, ctx->final_quantum, ctx->final_min, 0xff);
+        *ctx->final_mask = processed_mask;
 
         return;
     }
 
     // BEWARE that past this point bitmask must be encoded if rotation isn't enough
     float fadd, fmul;
-    dvdb::cube_888_f32 rotated_fma = rotated;
 
-    dvdb::linear_regression_with_mask(&rotated, ctx->dst, &fadd, &fmul, &ctx->dst_fmask);
+    dvdb::linear_regression_with_mask(&processed_f32, &ctx->fdst, &fadd, &fmul, &ctx->fdst_fmask);
 
     // Until I fix linear regression sometimes going wild
     if (std::abs(fadd) >= dvdb::code_points::fma::range || std::abs(fmul) >= dvdb::code_points::fma::range)
@@ -220,12 +241,12 @@ void vdb_encode(encoder_context *ctx, float max_error)
     // simulate precision loss
     {
         const auto [add, mul] = dvdb::code_points::fma::to_float(dvdb::code_points::fma::from_float(fadd, fmul));
-        dvdb::fma(&rotated, &rotated_fma, add, mul);
+        dvdb::fma(&processed_f32, &processed_f32, add, mul);
     }
 
-    float error_rotation_fma_only = dvdb::mean_squared_error_with_mask(&rotated_fma, ctx->dst, &ctx->dst_fmask);
+    float error_rotation_fma_only = dvdb::mean_squared_error_with_mask(&processed_f32, &ctx->fdst, &ctx->fdst_fmask);
 
-    if (error_rotation_fma_only < max_error)
+    if (false)
     {
         const bool encodes_rotation = rotation != glm::ivec3(0);
 
@@ -248,22 +269,22 @@ void vdb_encode(encoder_context *ctx, float max_error)
             });
         }
 
-        write(dvdb::code_points::fma::from_float(fadd, fmul));
-
         write(*ctx->dst_mask);
 
-        *ctx->final = rotated_fma;
-        *ctx->final_mask = rotated_mask;
+        write(dvdb::code_points::fma::from_float(fadd, fmul));
+
+        dvdb::encode_to_i8(&processed_f32, ctx->final, ctx->final_quantum, ctx->final_min, 0xff);
+        *ctx->final_mask = processed_mask;
 
         return;
     }
 
     dvdb::cube_888_i8 diff8;
     dvdb::cube_888_f32 diff, diff_decoded;
-    float min, max, error_diff;
+    float min, quantum, error_diff;
     uint8_t quantization;
 
-    dvdb::sub(ctx->dst, &rotated_fma, &diff);
+    dvdb::sub(&ctx->fdst, &processed_f32, &diff);
 
     dvdb::cube_888_f32 post_diff;
 
@@ -271,12 +292,12 @@ void vdb_encode(encoder_context *ctx, float max_error)
     {
         quantization = i;
 
-        dvdb::encode_to_i8(&diff, &diff8, &max, &min, quantization);
-        dvdb::decode_from_i8(&diff8, &diff_decoded, max, min, quantization);
+        dvdb::encode_to_i8(&diff, &diff8, &quantum, &min, quantization);
+        dvdb::decode_from_i8(&diff8, &diff_decoded, quantum, min, quantization);
 
-        dvdb::add(&diff_decoded, &rotated_fma, &post_diff);
+        dvdb::add(&diff_decoded, &processed_f32, &post_diff);
 
-        error_diff = dvdb::mean_squared_error_with_mask(&post_diff, ctx->dst, &ctx->dst_fmask);
+        error_diff = dvdb::mean_squared_error_with_mask(&post_diff, &ctx->fdst, &ctx->fdst_fmask);
 
         if (error_diff <= max_error)
         {
@@ -310,9 +331,9 @@ void vdb_encode(encoder_context *ctx, float max_error)
             });
         }
 
-        write(dvdb::code_points::fma::from_float(fadd, fmul));
-
         write(*ctx->dst_mask);
+
+        write(dvdb::code_points::fma::from_float(fadd, fmul));
 
         write(dvdb::code_points::quantization{
             quantization,
@@ -320,19 +341,19 @@ void vdb_encode(encoder_context *ctx, float max_error)
 
         write(dvdb::code_points::map{
             .min = min,
-            .max = max,
+            .quantum = quantum,
         });
 
         write(diff8);
 
-        *ctx->final = post_diff;
+        dvdb::encode_to_i8(&post_diff, ctx->final, ctx->final_quantum, ctx->final_min, 0xff);
         *ctx->final_mask = *ctx->dst_mask;
     }
 }
 
 std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_state, void *final_state, converter::dvdb_state *state, std::shared_ptr<utils::thread_pool> thread_pool)
 {
-    static constexpr float max_error_base = 0.1f;
+    static constexpr float max_error_base = 0.01f;
 
     converter::nvdb_reader src_reader{}, dst_reader{}, final_reader{};
 
@@ -345,10 +366,11 @@ std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_
 
     std::vector<uint8_t> output_data;
 
-    dvdb::cube_888_f32 empty_values{};
-    dvdb::cube_888_mask empty_mask{};
+    float empty_float{};
+    const dvdb::cube_888_i8 empty_values{};
+    const dvdb::cube_888_mask empty_mask{};
 
-    float min = 1e12, max = -1e12;
+    float stat_min = 1e12, stat_max = -1e12;
 
     {
         std::lock_guard lock(state->status_mtx);
@@ -357,21 +379,18 @@ std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_
 
     for (int i = 0; i < dst_reader.leaf_count(); ++i)
     {
-        const auto leaf_data = dst_reader.leaf_table_ptr(i);
+        const auto leaf_data = dst_reader.leaf_min_quantum(i);
 
-        for (int j = 0; j < std::size(leaf_data->values); ++j)
+        if (leaf_data.min < stat_min)
         {
-            const auto value = leaf_data->values[j];
+            stat_min = leaf_data.min;
+        }
 
-            if (value < min)
-            {
-                min = value;
-            }
+        const auto calculated_max = leaf_data.min + leaf_data.quantum * 0xff;
 
-            if (value > max)
-            {
-                max = value;
-            }
+        if (calculated_max > stat_max)
+        {
+            stat_max = calculated_max;
         }
 
         ++state->leaves_processed;
@@ -393,14 +412,41 @@ std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_
 
         ctx.dst_mask = dst_reader.leaf_bitmask_ptr(i);
         ctx.dst = dst_reader.leaf_table_ptr(i);
-        ctx.dst_fmask = ctx.dst_mask->as_values<float, 1, 0>();
+        ctx.fdst_fmask = ctx.dst_mask->as_values<float, 1, 0>();
+
+        {
+            const auto [min, quantum] = dst_reader.leaf_min_quantum_ptrs(i);
+            ctx.dst_min = min;
+            ctx.dst_quantum = quantum;
+        }
 
         ctx.final_mask = final_reader.leaf_bitmask_ptr(i);
         ctx.final = final_reader.leaf_table_ptr(i);
         ctx.key = dst_reader.leaf_key(i);
         ctx.written = 0;
 
+        {
+            const auto [min, quantum] = final_reader.leaf_min_quantum_ptrs(i);
+            ctx.final_min = min;
+            ctx.final_quantum = quantum;
+        }
+
         src_reader.leaf_neighbors(dst_reader.leaf_coord(i), ctx.src_neighborhood, ctx.src_neighborhood_masks, &empty_values, &empty_mask);
+
+        for (int i = 0; i < std::size(ctx.src_neighborhood); ++i)
+        {
+            if (ctx.src_neighborhood[i] != &empty_values)
+            {
+                const auto [min, quantum] = src_reader.leaf_min_quantum_from_table(ctx.src_neighborhood[i]);
+                ctx.src_min[i] = min;
+                ctx.src_quantum[i] = quantum;
+            }
+            else
+            {
+                ctx.src_min[i] = {};
+                ctx.src_quantum[i] = {};
+            }
+        }
 
         work_finished[i] = thread_pool->enqueue([ctx_ptr = &ctx]() { vdb_encode(ctx_ptr, max_error_base); });
 
@@ -482,7 +528,9 @@ void dvdb_converter::create_keyframe(std::filesystem::path path)
     int alignment_correction = 0;
     const auto nvdb_buffer = converter::unpack_nvdb_file(path.c_str(), &alignment_correction);
 
-    utils::nvdb_mmap nvdb_mmap(nvdb_buffer.data() + alignment_correction);
+    const auto fp8nvdb = converter::nvdb_to_nvdb_fp8(nvdb_buffer.data() + alignment_correction, nvdb_buffer.size() - alignment_correction);
+
+    utils::nvdb_mmap nvdb_mmap(fp8nvdb.data());
     _state->read_size += nvdb_mmap.mem_size();
 
     auto dvdb_path = path;
@@ -584,7 +632,9 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
     int alignment_correction = 0;
     const auto nvdb_buffer = converter::unpack_nvdb_file(path.c_str(), &alignment_correction);
 
-    utils::nvdb_mmap nvdb_mmap(nvdb_buffer.data() + alignment_correction);
+    const auto fp8nvdb = converter::nvdb_to_nvdb_fp8(nvdb_buffer.data() + alignment_correction, nvdb_buffer.size() - alignment_correction);
+
+    utils::nvdb_mmap nvdb_mmap(fp8nvdb.data());
     _state->read_size += nvdb_mmap.mem_size();
 
     auto dvdb_path = path;

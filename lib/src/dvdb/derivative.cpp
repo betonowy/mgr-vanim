@@ -82,19 +82,20 @@ void decode_derivative_from_i8(const cube_888_i8 *der, cube_888_f32 *res, float 
     map_values(range_a, quantization_limit, min, max, &mid, res);
 }
 
-void encode_to_i8(const cube_888_f32 *src, cube_888_i8 *dst, float *max, float *min, uint8_t quantization_limit)
+void encode_to_i8(const cube_888_f32 *src, cube_888_i8 *dst, float *quantum, float *min, uint8_t quantization_limit)
 {
-    *min = *max = src->values[0];
+    float smin, smax = src->values[0];
+    // *min = *max = src->values[0];
 
     for (int i = 1; i < std::size(src->values); ++i)
     {
-        *max = std::max(*max, src->values[i]);
-        *min = std::min(*min, src->values[i]);
+        smax = std::max(smax, src->values[i]);
+        smin = std::min(smin, src->values[i]);
     }
 
     cube_888_f32 mid;
 
-    map_values(*min, *max, range_a, quantization_limit, src, &mid);
+    map_values(smin, smax, range_a, quantization_limit, src, &mid);
 
     for (int i = 0; i < std::size(dst->values); ++i)
     {
@@ -110,17 +111,46 @@ void encode_to_i8(const cube_888_f32 *src, cube_888_i8 *dst, float *max, float *
         //     dst->values[i] = std::ceil(mid.values[i]);
         // }
     }
+
+    *min = smin;
+    *quantum = (smax - smin) / quantization_limit;
+
+    if (std::isnan(*min) || std::isnan(*quantum))
+    {
+        int _ = 0;
+    }
 }
 
-void decode_from_i8(const cube_888_i8 *src, cube_888_f32 *dst, float max, float min, uint8_t quantization_limit)
+void decode_from_i8(const cube_888_i8 *src, cube_888_f32 *dst, float quantum, float min, uint8_t quantization_limit)
 {
-    cube_888_f32 mid;
-
     for (int i = 0; i < std::size(src->values); ++i)
     {
-        mid.values[i] = src->values[i];
+        dst->values[i] = min + src->values[i] * quantum;
     }
 
-    map_values(range_a, quantization_limit, min, max, &mid, dst);
+    // cube_888_f32 mid;
+
+    // for (int i = 0; i < std::size(src->values); ++i)
+    // {
+    //     mid.values[i] = src->values[i];
+    // }
+
+    // map_values(range_a, quantization_limit, min, min + quantum * quantization_limit, &mid, dst);
+}
+
+void to_i8(const cube_888_f32 *src, cube_888_i8 *dst)
+{
+    for (int i = 0; i < std::size(src->values); ++i)
+    {
+        dst->values[i] = src->values[i];
+    }
+}
+
+void from_i8(const cube_888_i8 *src, cube_888_f32 *dst)
+{
+    for (int i = 0; i < std::size(src->values); ++i)
+    {
+        dst->values[i] = src->values[i];
+    }
 }
 } // namespace dvdb

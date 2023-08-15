@@ -118,4 +118,19 @@ void sqrt(const cube_888_f32 *src, cube_888_f32 *dst)
         _mm256_storeu_ps(dst->values + i, ymm_dst);
     }
 }
+
+void bit_xor(const cube_888_mask *lhs, const cube_888_mask *rhs, cube_888_mask *dst)
+{
+    auto lhs_u64 = reinterpret_cast<const uint64_t*>(lhs);
+    auto rhs_u64 = reinterpret_cast<const uint64_t*>(rhs);
+    auto dst_u64 = reinterpret_cast<uint64_t*>(dst);
+
+    static constexpr auto count = sizeof(*dst) / sizeof(*dst_u64);
+
+#pragma GCC unroll 8
+    for (int i = 0; i < count; ++i)
+    {
+        dst_u64[i] = lhs_u64[i] ^ rhs_u64[i];
+    }
+}
 } // namespace dvdb

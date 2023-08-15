@@ -15,4 +15,6 @@ void div_fast(const cube_888_f32 *lhs, const cube_888_f32 *rhs, cube_888_f32 *ds
 void rcp(const cube_888_f32 *src, cube_888_f32 *dst);
 void rsqrt(const cube_888_f32 *src, cube_888_f32 *dst);
 void sqrt(const cube_888_f32 *src, cube_888_f32 *dst);
+
+void bit_xor(const cube_888_mask *lhs, const cube_888_mask *rhs, cube_888_mask *dst);
 } // namespace dvdb

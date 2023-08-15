@@ -60,11 +60,62 @@ public:
         return reinterpret_cast<dvdb::cube_888_mask *>(leaf_ptr(i)->value_mask);
     }
 
-    dvdb::cube_888_f32 *leaf_table_ptr(size_t i) const
+    dvdb::cube_888_i8 *leaf_table_ptr(size_t i) const
     {
         auto base = _buf.data + (_leaf_handles[i].second.address.byte_offset >> 2);
-        auto table_offset = pnanovdb_grid_type_constants[PNANOVDB_GRID_TYPE_FLOAT].leaf_off_table;
-        return reinterpret_cast<dvdb::cube_888_f32 *>(base + (table_offset >> 2));
+        auto table_offset = pnanovdb_grid_type_constants[PNANOVDB_GRID_TYPE_FP8].leaf_off_table;
+        return reinterpret_cast<dvdb::cube_888_i8 *>(base + (table_offset >> 2));
+    }
+
+    auto leaf_min_quantum_from_table(const dvdb::cube_888_i8* table)
+    {
+        auto base = reinterpret_cast<const uint32_t*>(table);
+        auto min_off = pnanovdb_grid_type_constants[PNANOVDB_GRID_TYPE_FLOAT].leaf_off_table - pnanovdb_grid_type_constants[PNANOVDB_GRID_TYPE_FLOAT].leaf_off_min;
+        auto max_off = pnanovdb_grid_type_constants[PNANOVDB_GRID_TYPE_FLOAT].leaf_off_table - pnanovdb_grid_type_constants[PNANOVDB_GRID_TYPE_FLOAT].leaf_off_max;
+
+        const float *min = reinterpret_cast<const float *>(base - (min_off >> 2));
+        const float *quantum = reinterpret_cast<const float *>(base - (max_off >> 2));
+
+        struct minmax
+        {
+            float min, quantum;
+        };
+
+        return minmax{.min = *min, .quantum = *quantum};
+    }
+
+    auto leaf_min_quantum(size_t i) const
+    {
+        auto base = _buf.data + (_leaf_handles[i].second.address.byte_offset >> 2);
+        auto min_off = pnanovdb_grid_type_constants[PNANOVDB_GRID_TYPE_FLOAT].leaf_off_min;
+        auto max_off = pnanovdb_grid_type_constants[PNANOVDB_GRID_TYPE_FLOAT].leaf_off_max;
+
+        float *min = reinterpret_cast<float *>(base + (min_off >> 2));
+        float *quantum = reinterpret_cast<float *>(base + (max_off >> 2));
+
+        struct minmax
+        {
+            float min, quantum;
+        };
+
+        return minmax{.min = *min, .quantum = *quantum};
+    }
+
+    auto leaf_min_quantum_ptrs(size_t i) const
+    {
+        auto base = _buf.data + (_leaf_handles[i].second.address.byte_offset >> 2);
+        auto min_off = pnanovdb_grid_type_constants[PNANOVDB_GRID_TYPE_FLOAT].leaf_off_min;
+        auto max_off = pnanovdb_grid_type_constants[PNANOVDB_GRID_TYPE_FLOAT].leaf_off_max;
+
+        float *min = reinterpret_cast<float *>(base + (min_off >> 2));
+        float *quantum = reinterpret_cast<float *>(base + (max_off >> 2));
+
+        struct minmax_ptr
+        {
+            float *min, *quantum;
+        };
+
+        return minmax_ptr{.min = min, .quantum = quantum};
     }
 
     uint64_t leaf_key(size_t i) const
@@ -84,9 +135,9 @@ public:
 
     int get_leaf_index_from_key(uint64_t key) const;
 
-    void leaf_neighbors(glm::ivec3 coord, dvdb::cube_888_f32 **values, dvdb::cube_888_mask **masks, dvdb::cube_888_f32* empty_values, dvdb::cube_888_mask* empty_mask) const;
+    void leaf_neighbors(glm::ivec3 coord, const dvdb::cube_888_i8 **values, const dvdb::cube_888_mask **masks, const dvdb::cube_888_i8 *empty_values, const dvdb::cube_888_mask *empty_mask) const;
 
-    void leaf_neighbors(uint64_t key, dvdb::cube_888_f32 **values, dvdb::cube_888_mask **masks, dvdb::cube_888_f32* empty_values, dvdb::cube_888_mask* empty_mask) const
+    void leaf_neighbors(uint64_t key, const dvdb::cube_888_i8 **values, const dvdb::cube_888_mask **masks, const dvdb::cube_888_i8 *empty_values, const dvdb::cube_888_mask *empty_mask) const
     {
         leaf_neighbors(key_to_ivec3(key), values, masks, empty_values, empty_mask);
     }

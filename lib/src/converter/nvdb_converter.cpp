@@ -3,8 +3,8 @@
 #include <mio/mmap.hpp>
 #include <nanovdb/NanoVDB.h>
 #include <nanovdb/util/IO.h>
-#include <nanovdb/util/OpenToNanoVDB.h>
 #include <nanovdb/util/NanoToOpenVDB.h>
+#include <nanovdb/util/OpenToNanoVDB.h>
 #include <openvdb/openvdb.h>
 
 #include "nvdb_compressor.hpp"
@@ -44,11 +44,6 @@ conversion_result convert_to_nvdb(std::filesystem::path path, nvdb_format format
 
         for (auto name_it = file.beginName(); name_it != file.endName(); ++name_it)
         {
-            if (name_it.gridName() != "density")
-            {
-                continue;
-            }
-
             auto grid = file.readGrid(name_it.gridName());
 
             if (auto ovdb = openvdb::GridBase::grid<openvdb::FloatGrid>(grid))
@@ -113,13 +108,21 @@ conversion_result convert_to_nvdb(std::filesystem::path path, nvdb_format format
     return res.message = nvdb_path.string(), res.success = true, res;
 }
 
-std::vector<nanovdb::GridHandle<nanovdb::HostBuffer>> nvdb_to_nvdb_fp8(const char* in)
+std::vector<char> nvdb_to_nvdb_fp8(const char *in, size_t size)
 {
-    const auto in_grids = nanovdb::io::readGrids(in);
+    std::stringstream ss;
+    ss << std::string_view(in, size);
+
+    auto in_grids = nanovdb::io::readGrids(ss);
+
+    {
+        const auto destroy = std::move(ss);
+    }
+
     std::vector<nanovdb::GridHandle<nanovdb::HostBuffer>> out_grids;
     out_grids.reserve(in_grids.size());
 
-    for (const auto& in_grid : in_grids)
+    for (const auto &in_grid : in_grids)
     {
         const auto ovdb = nanovdb::nanoToOpenVDB(in_grid);
         nanovdb::OpenToNanoVDB<float, nanovdb::Fp8> converter;
@@ -127,12 +130,26 @@ std::vector<nanovdb::GridHandle<nanovdb::HostBuffer>> nvdb_to_nvdb_fp8(const cha
         out_grids.push_back(converter(*ovdb_float, nanovdb::StatsMode::All, nanovdb::ChecksumMode::Full, 0));
     }
 
-    for (const auto& out_grid : out_grids)
+    for (const auto &out_grid : out_grids)
     {
         const auto lol = out_grid.grid<nanovdb::Fp8>();
         const auto a = lol->gridType();
     }
 
-    return out_grids;
+    in_grids.clear();
+
+    const char *tmp_path = "/tmp/tempnanochuj.nvdb";
+
+    std::vector<char> out_buf;
+    {
+        nanovdb::io::writeGrids(tmp_path, out_grids);
+        out_grids.clear();
+        mio::mmap_source file_mmap(tmp_path);
+        out_buf.resize(file_mmap.size());
+        std::memcpy(out_buf.data(), file_mmap.data(), file_mmap.size());
+    }
+    std::remove(tmp_path);
+
+    return out_buf;
 }
 } // namespace converter

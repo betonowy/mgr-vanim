@@ -146,7 +146,7 @@ struct fma
 
 struct map
 {
-    float min, max;
+    float min, quantum;
 };
 
 struct quantization
