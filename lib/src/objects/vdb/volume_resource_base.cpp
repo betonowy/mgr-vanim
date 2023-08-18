@@ -149,8 +149,17 @@ int volume_resource_base::get_active_block_number()
     return -1;
 }
 
+void volume_resource_base::reset_csv()
+{
+    _csv_out.close();
+    _csv_out.open("dbg.csv");
+    _csv_out << "frame;comp_size;data_size;ts_pre_fence;ts_post_fence;ts_start;ts_end;td;\n";
+}
+
 void volume_resource_base::init(scene::object_context &ctx)
 {
+    reset_csv();
+
     using source = gl::shader::source;
     using type = gl::shader::source::type_e;
     using attr = gl::vertex_array::attribute;

@@ -131,7 +131,7 @@ void nano_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
     _ssbo_block_frame[block_number] = frame_number;
     _ssbo_timestamp[block_number] = std::chrono::steady_clock::now();
 
-    std::function task = [this, wptr = weak_from_this(), block_number, frame_number]() -> update_range {
+    std::function task = [this, wptr = weak_from_this(), block_number, frame_number, wait_t1, wait_t2]() -> update_range {
         glm::uvec4 offsets(~0);
         size_t copy_size = 0;
 
@@ -158,6 +158,18 @@ void nano_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
         auto copy_t2 = std::chrono::steady_clock::now();
 
         utils::update_copy_time(std::chrono::duration_cast<std::chrono::microseconds>(copy_t2 - copy_t1).count());
+
+        size_t compressed_size = mio::mmap_source(_nvdb_frames[frame_number].second.string()).size();
+        size_t data_size = copy_size;
+
+        _csv_out << frame_number << ';'
+                 << compressed_size << ';'
+                 << data_size << ';'
+                 << tp_since(wait_t1) << ';'
+                 << tp_since(wait_t2) << ';'
+                 << tp_since(map_t1) << ';'
+                 << tp_since(copy_t2) << ';'
+                 << tp_diff(map_t1, copy_t2) << ";\n";
 
         return {
             .offsets = offsets,

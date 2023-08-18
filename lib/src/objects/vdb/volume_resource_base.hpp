@@ -12,6 +12,8 @@
 #include <filesystem>
 #include <future>
 #include <vector>
+#include <fstream>
+#include <chrono>
 
 namespace objects::ui
 {
@@ -24,6 +26,8 @@ class volume_resource_base : public scene::object
 {
 public:
     virtual const char *class_name() = 0;
+
+    void reset_csv();
 
     void set_buffer_size(bool preserve_contents);
 
@@ -87,6 +91,16 @@ public:
     void update(scene::object_context &, float) override;
     void signal(scene::object_context &, scene::signal_e) override;
 
+    auto tp_diff(std::chrono::steady_clock::time_point tp1, std::chrono::steady_clock::time_point tp2)
+    {
+        return std::chrono::duration_cast<std::chrono::microseconds>(tp2 - tp1).count();
+    }
+
+    auto tp_since(std::chrono::steady_clock::time_point tp)
+    {
+        return tp_diff(_tp_start, tp);
+    }
+
 protected:
     static constexpr size_t MAX_BLOCKS = 3;
 
@@ -120,6 +134,9 @@ protected:
     float _frame_overshoot = 0;
 
     std::shared_ptr<objects::misc::world_data> _world_data;
+
+    std::ofstream _csv_out;
+    std::chrono::steady_clock::time_point _tp_start = std::chrono::steady_clock::now();
 
 private:
     int get_old_unused_block_number();

@@ -395,7 +395,7 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
 
     std::atomic_bool worker_side_locked = false;
 
-    std::function task = [this, wptr = weak_from_this(), frame_number, block_number, &worker_side_locked, wtp = std::weak_ptr(ctx.generic_thread_pool_sptr())]() -> update_range {
+    std::function task = [this, wptr = weak_from_this(), frame_number, block_number, &worker_side_locked, wtp = std::weak_ptr(ctx.generic_thread_pool_sptr()), wait_t1, wait_t2]() -> update_range {
         glm::uvec4 offsets(~0);
         size_t copy_size = 0;
 
@@ -427,6 +427,9 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
 
         auto copy_t1 = std::chrono::steady_clock::now();
 
+        size_t compressed_size = 0;
+        size_t data_size = 0;
+
         switch (header->frame_type)
         {
         case dvdb::headers::main::frame_type_e::KEY_FRAME: {
@@ -442,6 +445,7 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
 
             _created_state = std::move(source_buffer);
             utils::gpu_memcpy(_ssbo_ptr + block_number * _ssbo_block_size, _created_state.data(), _created_state.size());
+            data_size = _created_state.size();
         }
         break;
         case dvdb::headers::main::frame_type_e::DIFF_FRAME: {
@@ -475,13 +479,10 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
                 // removing constness is ok here
                 void *diff_data = const_cast<char *>(source_buffer.data()) + header->frames[i].diff_data_offset_start;
 
-                if (frame_number == 179)
-                {
-                    int _ = 0;
-                }
-
                 grid_reconstruction(diff_data, dst_grid, src_grid, thread_pool.get());
             }
+
+            data_size = src_offsets[3] + src_header->frames[3].base_tree_final_size;
 
             utils::gpu_memcpy(_ssbo_ptr + block_number * _ssbo_block_size, _created_state.data(), header->vdb_required_size);
         }
@@ -493,6 +494,17 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
         auto copy_t2 = std::chrono::steady_clock::now();
 
         utils::update_copy_time(std::chrono::duration_cast<std::chrono::microseconds>(copy_t2 - copy_t1).count());
+
+        compressed_size = _dvdb_frames[frame_number].second.string().size();
+
+        _csv_out << frame_number << ';'
+                 << compressed_size << ';'
+                 << data_size << ';'
+                 << tp_since(wait_t1) << ';'
+                 << tp_since(wait_t2) << ';'
+                 << tp_since(map_t1) << ';'
+                 << tp_since(copy_t2) << ';'
+                 << tp_diff(map_t1, copy_t2) << ";\n";
 
         return {
             .offsets = offsets,

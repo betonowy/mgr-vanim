@@ -116,7 +116,7 @@ struct rotation_offset
 
 struct fma
 {
-    static constexpr auto range = 127;
+    static constexpr auto range = 8;
     static constexpr auto float_to_code = std::numeric_limits<int16_t>::max() / static_cast<float>(range);
     static constexpr auto code_to_float = 1 / float_to_code;
 
