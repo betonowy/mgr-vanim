@@ -5,6 +5,7 @@
 #include <scene/object_context.hpp>
 #include <utils/memory_counter.hpp>
 #include <utils/resource_path.hpp>
+#include <utils/clear_sys_cache.hpp>
 
 #include <iostream>
 
@@ -149,16 +150,18 @@ int volume_resource_base::get_active_block_number()
     return -1;
 }
 
-void volume_resource_base::reset_csv()
+void volume_resource_base::reset_csv_and_sys_cache()
 {
     _csv_out.close();
     _csv_out.open("dbg.csv");
     _csv_out << "frame;comp_size;data_size;ts_pre_fence;ts_post_fence;ts_start;ts_end;td;\n";
+
+    utils::clear_sys_cache();
 }
 
 void volume_resource_base::init(scene::object_context &ctx)
 {
-    reset_csv();
+    reset_csv_and_sys_cache();
 
     using source = gl::shader::source;
     using type = gl::shader::source::type_e;

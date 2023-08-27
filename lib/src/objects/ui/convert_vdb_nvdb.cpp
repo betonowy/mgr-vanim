@@ -51,6 +51,10 @@ convert_vdb_nvdb::job_result convert_vdb_nvdb_job(std::vector<std::filesystem::p
 
     const auto converter_status = converter::convert_to_nvdb(file, format, error, error_method);
 
+    res.e = converter_status.e;
+    res.em = converter_status.em;
+    res.ex = converter_status.ex;
+
     if (!converter_status.success)
     {
         res.error = converter_status.message;
@@ -68,10 +72,14 @@ convert_vdb_nvdb::job_result convert_vdb_nvdb_job(std::vector<std::filesystem::p
 
 void convert_vdb_nvdb::init(scene::object_context &ctx)
 {
+    conv_debug << "frame;error;min_error;max_error\n";
+
     std::function directory_job = [path = _working_path, thread_pool = ctx.generic_thread_pool_sptr(), format = _format, error_method = _error_method, error = _error]() mutable -> job_result {
         job_result res;
 
         auto files = converter::find_files_with_extension(path, ".vdb");
+
+        std::ranges::sort(files, std::greater{});
 
         if (files.empty())
         {
@@ -113,12 +121,23 @@ void convert_vdb_nvdb::update(scene::object_context &ctx, float)
             return destroy();
         }
 
+        bool skip = !skipped_first;
+
         if (!job_result.next_job && !job_result.finished)
         {
             ctx.add_object(std::make_shared<popup>(u8"Error", u8"No more jobs in progress, but process didn't finish "
                                                               u8"nor error. This shouldn't ever happen"));
             return destroy();
         }
+        else if (!skip && !job_result.finished)
+        {
+            conv_debug << frames_converted++ << ';'
+                       << job_result.e << ';'
+                       << job_result.em << ';'
+                       << job_result.ex << '\n';
+        }
+
+        skipped_first = true;
 
         _current_status = std::move(job_result);
     }

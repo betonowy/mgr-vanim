@@ -27,7 +27,7 @@ class volume_resource_base : public scene::object
 public:
     virtual const char *class_name() = 0;
 
-    void reset_csv();
+    void reset_csv_and_sys_cache();
 
     void set_buffer_size(bool preserve_contents);
 

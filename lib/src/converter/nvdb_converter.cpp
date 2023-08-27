@@ -3,10 +3,13 @@
 #include <mio/mmap.hpp>
 #include <nanovdb/NanoVDB.h>
 #include <nanovdb/util/IO.h>
-#include <nanovdb/util/OpenToNanoVDB.h>
 #include <nanovdb/util/NanoToOpenVDB.h>
+#include <nanovdb/util/OpenToNanoVDB.h>
 #include <openvdb/openvdb.h>
+#include <utils/nvdb_mmap.hpp>
 
+#include "dvdb_converter_nvdb.hpp"
+#include "error_calculator.hpp"
 #include "nvdb_compressor.hpp"
 
 #include <thread>
@@ -34,6 +37,8 @@ conversion_result convert_to_nvdb(std::filesystem::path path, nvdb_format format
 
     auto nvdb_path = path;
     nvdb_path.replace_extension(".nvdb");
+
+    std::vector<nanovdb::GridHandle<nanovdb::HostBuffer>> original_grids;
 
     {
         openvdb::io::File file(path.string());
@@ -95,6 +100,12 @@ conversion_result convert_to_nvdb(std::filesystem::path path, nvdb_format format
                         nano_grids.push_back(converter(*ovdb, nanovdb::StatsMode::All, nanovdb::ChecksumMode::Full, 0));
                     }
                 }
+
+                {
+                    nanovdb::OpenToNanoVDB<float, float> converter;
+                    converter.enableDithering();
+                    original_grids.push_back(converter(*ovdb, nanovdb::StatsMode::All, nanovdb::ChecksumMode::Full, 0));
+                }
             }
             else
             {
@@ -108,31 +119,91 @@ conversion_result convert_to_nvdb(std::filesystem::path path, nvdb_format format
         nanovdb::io::writeGrids<nanovdb::HostBuffer, std::vector>(nvdb_path.string(), nano_grids);
     }
 
-    converter::pack_nvdb_file(nvdb_path.c_str());
+    const auto size = converter::pack_nvdb_file(nvdb_path.c_str());
+
+    int correction{};
+    auto compressed_buffer = converter::unpack_nvdb_file(nvdb_path.c_str(), &correction);
+    compressed_buffer.erase(compressed_buffer.begin(), compressed_buffer.begin() + correction);
+    auto f32_compressed_buffer = nvdb_to_nvdb_float(compressed_buffer);
+
+    nvdb_reader org_rdr, new_rdr;
+    utils::nvdb_mmap header_reader(f32_compressed_buffer.data());
+
+    new_rdr.initialize(const_cast<void *>(header_reader.grids().front().ptr));
+    org_rdr.initialize(original_grids.front().data());
+
+    const auto error_result = calculate_error(std::move(org_rdr), std::move(new_rdr));
+
+    std::cout << "[nvdb_converter] finished frame: " << path << '\n';
+
+    res.e = error_result.error;
+    res.em = error_result.min_error;
+    res.ex = error_result.max_error;
 
     return res.message = nvdb_path.string(), res.success = true, res;
 }
 
-std::vector<nanovdb::GridHandle<nanovdb::HostBuffer>> nvdb_to_nvdb_fp8(const char* in)
+std::vector<char> nvdb_to_nvdb_float(const char *in)
 {
     const auto in_grids = nanovdb::io::readGrids(in);
     std::vector<nanovdb::GridHandle<nanovdb::HostBuffer>> out_grids;
     out_grids.reserve(in_grids.size());
 
-    for (const auto& in_grid : in_grids)
+    for (const auto &in_grid : in_grids)
     {
         const auto ovdb = nanovdb::nanoToOpenVDB(in_grid);
-        nanovdb::OpenToNanoVDB<float, nanovdb::Fp8> converter;
+        nanovdb::OpenToNanoVDB<float, float> converter;
         auto ovdb_float = openvdb::GridBase::grid<openvdb::FloatGrid>(ovdb);
         out_grids.push_back(converter(*ovdb_float, nanovdb::StatsMode::All, nanovdb::ChecksumMode::Full, 0));
     }
 
-    for (const auto& out_grid : out_grids)
+    for (const auto &out_grid : out_grids)
     {
-        const auto lol = out_grid.grid<nanovdb::Fp8>();
+        const auto lol = out_grid.grid<float>();
         const auto a = lol->gridType();
     }
 
-    return out_grids;
+    std::stringstream ss;
+    nanovdb::io::writeGrids(ss, out_grids);
+    const auto string = ss.str();
+    std::vector<char> buffer;
+    std::copy(string.begin(), string.end(), std::back_inserter(buffer));
+
+    return buffer;
+}
+
+std::vector<char> nvdb_to_nvdb_float(const std::vector<char> &in)
+{
+    std::stringstream ssin;
+    ssin.write(in.data(), in.size());
+    const auto in_grids = nanovdb::io::readGrids(ssin);
+    std::vector<nanovdb::GridHandle<nanovdb::HostBuffer>> out_grids;
+    out_grids.reserve(in_grids.size());
+
+    for (const auto &in_grid : in_grids)
+    {
+        const auto ovdb = nanovdb::nanoToOpenVDB(in_grid);
+        nanovdb::OpenToNanoVDB<float, float> converter;
+        auto ovdb_float = openvdb::GridBase::grid<openvdb::FloatGrid>(ovdb);
+        out_grids.push_back(converter(*ovdb_float, nanovdb::StatsMode::All, nanovdb::ChecksumMode::Full, 0));
+    }
+
+    for (const auto &out_grid : out_grids)
+    {
+        const auto lol = out_grid.grid<float>();
+        const auto a = lol->gridType();
+    }
+
+    static std::atomic<int> counter = 0;
+    std::stringstream ss;
+    ss << "/tmp/tempnano_to_nano" << counter++;
+    nanovdb::io::writeGrids(ss.str(), out_grids);
+    const auto file = mio::mmap_source(ss.str());
+    std::vector<char> buffer;
+    std::copy(file.begin(), file.end(), std::back_inserter(buffer));
+
+    std::filesystem::remove(ss.str());
+
+    return buffer;
 }
 } // namespace converter

@@ -24,5 +24,6 @@ enum class nvdb_error_method
 
 conversion_result convert_to_nvdb(std::filesystem::path, nvdb_format, float error = 0.01, nvdb_error_method = nvdb_error_method::relative);
 
-std::vector<char> nvdb_to_nvdb_fp8(void* handle);
+std::vector<char> nvdb_to_nvdb_float(const char* handle);
+std::vector<char> nvdb_to_nvdb_float(const std::vector<char>& in);
 } // namespace converter

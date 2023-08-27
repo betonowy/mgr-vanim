@@ -105,7 +105,7 @@ void animation_controller::update(scene::object_context &ctx, float)
 
         if (ImGui::Button("Reset CSV"))
         {
-            _volume_resource->reset_csv();
+            _volume_resource->reset_csv_and_sys_cache();
         }
     }
     ImGui::End();

@@ -13,6 +13,8 @@ struct conversion_result
 
     int nvdb_read_size = 0;
     int nvdb_write_size = 0;
+
+    float e, em, ex;
 };
 
 std::vector<std::filesystem::path> find_files_with_extension(std::filesystem::path directory, std::string extension);

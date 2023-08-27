@@ -7,6 +7,7 @@
 #include <future>
 #include <variant>
 #include <vector>
+#include <fstream>
 
 #include <converter/nvdb_converter.hpp>
 
@@ -28,6 +29,7 @@ public:
         std::string error;
         float progress = 0;
         bool finished = false;
+        float e, em, ex;
     };
 
 private:
@@ -36,5 +38,8 @@ private:
     converter::nvdb_format _format;
     converter::nvdb_error_method _error_method;
     float _error;
+    std::ofstream conv_debug{"nvdb_conv.csv"};
+    int frames_converted{};
+    bool skipped_first = false;
 };
 } // namespace objects::ui
