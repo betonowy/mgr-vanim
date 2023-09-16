@@ -11,7 +11,7 @@ namespace objects::ui
 class file_dialog : public scene::object
 {
 public:
-    file_dialog(std::function<bool(std::filesystem::path)>, std::filesystem::path = {});
+    file_dialog(std::function<bool(std::filesystem::path)>, std::filesystem::path = {}, std::function<void()> = {});
 
     ~file_dialog() override;
 
@@ -24,5 +24,6 @@ private:
     std::filesystem::path _current_path;
     std::function<bool(std::filesystem::path)> _callback;
     std::vector<std::filesystem::path> _directoryListing;
+    std::function<void()> _extra_func;
 };
 } // namespace objects::ui

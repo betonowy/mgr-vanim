@@ -15,7 +15,7 @@ namespace objects::ui
 class convert_nvdb_dvdb : public scene::object
 {
 public:
-    convert_nvdb_dvdb(std::filesystem::path);
+    convert_nvdb_dvdb(std::filesystem::path, float max_error);
     ~convert_nvdb_dvdb() override;
 
     void init(scene::object_context &) override;
@@ -40,5 +40,6 @@ private:
     std::filesystem::path _working_path;
     job_result _current_status;
     float _error;
+    float _max_error;
 };
 } // namespace objects::ui

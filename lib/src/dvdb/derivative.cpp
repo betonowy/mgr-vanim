@@ -39,7 +39,7 @@ void map_values(float src_a, float src_b, float dst_a, float dst_b, const cube_8
     }
 }
 
-static constexpr auto range_a = 1e-5; // zero - safeguard against floating point inaccuracy
+static constexpr auto range_a = 0; // zero - safeguard against floating point inaccuracy
 // static constexpr float gamma = 0.87f;  // magic value - don't touch - somehow improves mean squared error
 // static constexpr int start_record = 1; // don't gamma correct first value (base component)
 

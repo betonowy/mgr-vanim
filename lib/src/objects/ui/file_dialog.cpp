@@ -10,8 +10,9 @@
 
 namespace objects::ui
 {
-file_dialog::file_dialog(std::function<bool(std::filesystem::path)> callback, std::filesystem::path starting_path)
+file_dialog::file_dialog(std::function<bool(std::filesystem::path)> callback, std::filesystem::path starting_path,  std::function<void()> extra_func)
     : _callback(std::move(callback))
+    , _extra_func(std::move(extra_func))
 {
     if (!starting_path.empty())
     {
@@ -98,6 +99,13 @@ void file_dialog::update(scene::object_context &, float)
         if (ImGui::Button("Cancel"))
         {
             destroy();
+        }
+
+        
+        if (_extra_func)
+        {
+            ImGui::Separator();
+            _extra_func();
         }
 
         ImGui::Separator();

@@ -19,7 +19,8 @@
         "boost-ptr-container",
         "boost-system",
         "boost-thread",
-        "boost-uuid"
+        "boost-uuid",
+        "sciplot"
     ],
     "builtin-baseline": "231a73946227380d63e3d68d0322a01ea921524a"
 }

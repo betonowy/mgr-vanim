@@ -2,12 +2,12 @@
 
 #include <imgui.h>
 
-#include "../vdb/nano_vdb_resource.hpp"
 #include "../vdb/diff_vdb_resource.hpp"
+#include "../vdb/nano_vdb_resource.hpp"
 
 #include "animation_controller.hpp"
-#include "convert_vdb_nvdb.hpp"
 #include "convert_nvdb_dvdb.hpp"
+#include "convert_vdb_nvdb.hpp"
 #include "debug_window.hpp"
 #include "file_dialog.hpp"
 #include "popup.hpp"
@@ -92,10 +92,18 @@ void main_menu::update(scene::object_context &ctx, float)
 
             if (ImGui::MenuItem("Convert OpenVDB to custom format"))
             {
-                ctx.add_object(std::make_shared<file_dialog>([ctx = &ctx](std::filesystem::path path) -> bool {
-                    ctx->add_object(std::make_shared<convert_nvdb_dvdb>(std::move(path)));
+                auto error_sptr_comm = std::make_shared<float>();
+
+                auto dialog_result = [ctx = &ctx, error_sptr_comm](std::filesystem::path path) -> bool {
+                    ctx->add_object(std::make_shared<convert_nvdb_dvdb>(std::move(path), *error_sptr_comm));
                     return true;
-                }));
+                };
+
+                auto extra_func = [error_sptr = std::move(error_sptr_comm)]() {
+                    ImGui::InputFloat("Max error", error_sptr.get(), 0, 0, "%f");
+                };
+
+                ctx.add_object(std::make_shared<file_dialog>(dialog_result, std::filesystem::path{}, extra_func));
             }
 
             if (ImGui::MenuItem("Open NanoVDB animation"))
@@ -119,7 +127,7 @@ void main_menu::update(scene::object_context &ctx, float)
                     }
                     catch (std::exception &e)
                     {
-                        ctx->add_object(std::make_shared<popup>(u8"Can't load NanoVDB animation", reinterpret_cast<const char8_t*>(e.what())));
+                        ctx->add_object(std::make_shared<popup>(u8"Can't load NanoVDB animation", reinterpret_cast<const char8_t *>(e.what())));
                         return false;
                     }
                 }));
@@ -146,7 +154,7 @@ void main_menu::update(scene::object_context &ctx, float)
                     }
                     catch (std::exception &e)
                     {
-                        ctx->add_object(std::make_shared<popup>(u8"Can't load Custom animation", reinterpret_cast<const char8_t*>(e.what())));
+                        ctx->add_object(std::make_shared<popup>(u8"Can't load Custom animation", reinterpret_cast<const char8_t *>(e.what())));
                         return false;
                     }
                 }));

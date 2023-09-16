@@ -2,6 +2,9 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <derivative.hpp>
+#include <statistics.hpp>
+
+#include <iostream>
 
 TEST_CASE("derivative_linear")
 {
@@ -57,11 +60,15 @@ TEST_CASE("derivative_linear_i8")
 
     for (int i = 0; i < std::size(src.values); ++i)
     {
-        src.values[i] = (i + base) & 0xff;
+        src.values[i] = (i + base) & 255;
     }
 
     dvdb::encode_derivative_to_i8(&src, &der, &min, &max, 0xff);
     dvdb::decode_derivative_from_i8(&der, &res, min, max, 0xff);
+
+    auto error = dvdb::mean_squared_error(&src, &res);
+
+    std::cout << "derivative_linear_i8 error: " << error << '\n';
 
     for (int i = 0; i < std::size(src.values); ++i)
     {
@@ -86,6 +93,6 @@ TEST_CASE("derivative_random_i8")
 
     for (int i = 0; i < std::size(src.values); ++i)
     {
-        REQUIRE_THAT(src.values[i], Catch::Matchers::WithinAbsMatcher(res.values[i], 1.f / 255.f));
+        REQUIRE_THAT(src.values[i], Catch::Matchers::WithinAbsMatcher(res.values[i], 0.5f / 255.f));
     }
 }

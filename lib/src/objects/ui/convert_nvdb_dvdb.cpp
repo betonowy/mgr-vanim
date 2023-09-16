@@ -15,8 +15,9 @@
 
 namespace objects::ui
 {
-convert_nvdb_dvdb::convert_nvdb_dvdb(std::filesystem::path path)
+convert_nvdb_dvdb::convert_nvdb_dvdb(std::filesystem::path path, float max_error)
     : _working_path(std::move(path))
+    , _max_error(max_error)
 {
 }
 
@@ -63,7 +64,7 @@ convert_nvdb_dvdb::job_result convert_nvdb_dvdb_job(std::vector<std::filesystem:
 
 void convert_nvdb_dvdb::init(scene::object_context &ctx)
 {
-    dvdb_converter = std::make_shared<converter::dvdb_converter>(ctx.generic_thread_pool_sptr());
+    dvdb_converter = std::make_shared<converter::dvdb_converter>(ctx.generic_thread_pool_sptr(), _max_error);
 
     std::function directory_job = [path = _working_path, thread_pool = ctx.generic_thread_pool_sptr(), converter = dvdb_converter]() mutable -> job_result {
         job_result res;

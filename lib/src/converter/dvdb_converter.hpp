@@ -16,7 +16,7 @@ struct dvdb_state;
 class dvdb_converter
 {
 public:
-    dvdb_converter(std::shared_ptr<utils::thread_pool> = {});
+    dvdb_converter(std::shared_ptr<utils::thread_pool> = {}, float max_error = 0);
     ~dvdb_converter();
 
     void create_keyframe(std::filesystem::path);

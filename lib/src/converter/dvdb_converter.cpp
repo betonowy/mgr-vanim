@@ -29,6 +29,8 @@ namespace converter
 {
 struct dvdb_state
 {
+    dvdb_state(float max_error) : allowed_error(max_error) {}
+
     std::mutex status_mtx;
     std::string status_string;
     std::string compression_string;
@@ -46,6 +48,7 @@ struct dvdb_state
     double error = 0;
     int frame_number = 0;
     float expected_error = 0;
+    float allowed_error = 0;
 
     std::ofstream file{"dvdb_cvt.csv"};
 };
@@ -140,27 +143,6 @@ struct encoder_context
 
 void vdb_encode(encoder_context *ctx, float max_error)
 {
-    // {
-    //     float min = 1e12, max = -1e12;
-
-    //     for (int j = 0; j < std::size(ctx->dst->values); ++j)
-    //     {
-    //         const auto value = ctx->dst->values[j];
-
-    //         if (value < min)
-    //         {
-    //             min = value;
-    //         }
-
-    //         if (value > max)
-    //         {
-    //             max = value;
-    //         }
-    //     }
-
-    //     max_error = max_error * max_error * (max - min);
-    // }
-
     static constexpr float FLOAT_MAX = std::numeric_limits<float>::max();
     static constexpr dvdb::cube_888_f32 empty_values_f32{};
 
@@ -178,7 +160,7 @@ void vdb_encode(encoder_context *ctx, float max_error)
     glm::ivec3 rotation{};
 
     // rotated source copy
-    // float error_rotation_only = dvdb::rotate_refill_find_astar(ctx->dst, {}, ctx->src_neighborhood, &rotation.x, &rotation.y, &rotation.z);
+    float error_rotation_only = dvdb::rotate_refill_find_astar(ctx->dst, {}, ctx->src_neighborhood, &rotation.x, &rotation.y, &rotation.z);
 
     dvdb::cube_888_f32 rotated, rotated_fmask;
     dvdb::cube_888_mask rotated_mask;
@@ -187,7 +169,7 @@ void vdb_encode(encoder_context *ctx, float max_error)
     dvdb::rotate_refill(&rotated_mask, ctx->src_neighborhood_masks, rotation.x, rotation.y, rotation.z);
     rotated_fmask = rotated_mask.as_values<float, 1, 0>();
 
-    float error_rotation_only = dvdb::mean_squared_error_with_mask(&rotated, ctx->dst, &rotated_fmask);
+    // float error_rotation_only = dvdb::mean_squared_error_with_mask(&rotated, ctx->dst, &rotated_fmask);
 
     if (error_rotation_only < max_error)
     {
@@ -346,7 +328,7 @@ void vdb_encode(encoder_context *ctx, float max_error)
 
 std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_state, void *final_state, converter::dvdb_state *state, std::shared_ptr<utils::thread_pool> thread_pool)
 {
-    static constexpr float max_error_base = 0.0000000001f;
+    const float max_error_base = state->allowed_error;
 
     converter::nvdb_reader src_reader{}, dst_reader{}, final_reader{};
 
@@ -416,7 +398,7 @@ std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_
 
         src_reader.leaf_neighbors(dst_reader.leaf_coord(i), ctx.src_neighborhood, ctx.src_neighborhood_masks, &empty_values, &empty_mask);
 
-        work_finished[i] = thread_pool->enqueue([ctx_ptr = &ctx]() { vdb_encode(ctx_ptr, max_error_base); });
+        work_finished[i] = thread_pool->enqueue([ctx_ptr = &ctx, max_error_base]() { vdb_encode(ctx_ptr, max_error_base); });
 
         ++state->leaves_processed;
     }
@@ -464,8 +446,8 @@ std::vector<uint8_t> vdb_create_rle_diff(const void *src_state, const void *dst_
 
 namespace converter
 {
-dvdb_converter::dvdb_converter(std::shared_ptr<utils::thread_pool> pool)
-    : _thread_pool(std::move(pool)), _state(std::make_unique<dvdb_state>())
+dvdb_converter::dvdb_converter(std::shared_ptr<utils::thread_pool> pool, float max_error)
+    : _thread_pool(std::move(pool)), _state(std::make_unique<dvdb_state>(max_error))
 {
 }
 
