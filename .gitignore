@@ -2,7 +2,6 @@
 build/
 install/
 package/
-.vscode/
 
 # pnanovdb.glsl is copied from openvdb dependencies
 res/glsl/pnanovdb.glsl
