@@ -483,7 +483,8 @@ void dvdb_converter::create_keyframe(std::filesystem::path path)
     set_status("Rewriting keyframe:\n  " + path.string());
 
     int alignment_correction = 0;
-    const auto nvdb_buffer = converter::unpack_nvdb_file(path.c_str(), &alignment_correction);
+    const auto str8 = path.string();
+    const auto nvdb_buffer = converter::unpack_nvdb_file(str8.c_str(), &alignment_correction);
 
     utils::nvdb_mmap nvdb_mmap(nvdb_buffer.data() + alignment_correction);
     _state->read_size += nvdb_mmap.mem_size();
@@ -573,7 +574,7 @@ void dvdb_converter::create_keyframe(std::filesystem::path path)
 
     change_compression_status(1);
 
-    _thread_pool->enqueue([weak = std::weak_ptr(_state), this, dvdb_path]() {
+    _thread_pool->enqueue([weak = std::weak_ptr(_state), this, dvdb_path = dvdb_path.string()]() {
         auto lock = weak.lock();
         _state->written_size += pack_dvdb_file(dvdb_path.c_str());
         change_compression_status(-1);
@@ -597,7 +598,8 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
     set_status("Processing interframe:\n  " + path.string());
 
     int alignment_correction = 0;
-    const auto nvdb_buffer = converter::unpack_nvdb_file(path.c_str(), &alignment_correction);
+    const auto str8 = path.string();
+    const auto nvdb_buffer = converter::unpack_nvdb_file(str8.c_str(), &alignment_correction);
 
     utils::nvdb_mmap nvdb_mmap(nvdb_buffer.data() + alignment_correction);
     _state->read_size += nvdb_mmap.mem_size();
@@ -716,7 +718,7 @@ void dvdb_converter::add_diff_frame(std::filesystem::path path)
 
     change_compression_status(1);
 
-    _thread_pool->enqueue([weak = std::weak_ptr(_state), this, dvdb_path]() {
+    _thread_pool->enqueue([weak = std::weak_ptr(_state), this, dvdb_path = dvdb_path.string()]() {
         auto lock = weak.lock();
         _state->written_size += pack_dvdb_file(dvdb_path.c_str());
         change_compression_status(-1);

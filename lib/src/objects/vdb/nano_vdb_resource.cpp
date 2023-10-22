@@ -145,7 +145,8 @@ void nano_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
         auto map_t1 = std::chrono::steady_clock::now();
 
         std::vector<char> mid_buffer(_ssbo_block_size);
-        offsets = converter::unpack_nvdb_file(_nvdb_frames[frame_number].second.c_str(), mid_buffer.data(), _ssbo_block_size, &copy_size);
+        const auto str8 = _nvdb_frames[frame_number].second.string();
+        offsets = converter::unpack_nvdb_file(str8.c_str(), mid_buffer.data(), _ssbo_block_size, &copy_size);
 
         auto map_t2 = std::chrono::steady_clock::now();
 

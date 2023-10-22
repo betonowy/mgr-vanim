@@ -1,5 +1,6 @@
 #include "nvdb_converter.hpp"
 
+#include <filesystem>
 #include <mio/mmap.hpp>
 #include <nanovdb/NanoVDB.h>
 #include <nanovdb/util/IO.h>
@@ -119,10 +120,11 @@ conversion_result convert_to_nvdb(std::filesystem::path path, nvdb_format format
         nanovdb::io::writeGrids<nanovdb::HostBuffer, std::vector>(nvdb_path.string(), nano_grids);
     }
 
-    const auto size = converter::pack_nvdb_file(nvdb_path.c_str());
+    const auto str8 = nvdb_path.string();
+    const auto size = converter::pack_nvdb_file(str8.c_str());
 
     int correction{};
-    auto compressed_buffer = converter::unpack_nvdb_file(nvdb_path.c_str(), &correction);
+    auto compressed_buffer = converter::unpack_nvdb_file(str8.c_str(), &correction);
     compressed_buffer.erase(compressed_buffer.begin(), compressed_buffer.begin() + correction);
     auto f32_compressed_buffer = nvdb_to_nvdb_float(compressed_buffer);
 
@@ -196,11 +198,14 @@ std::vector<char> nvdb_to_nvdb_float(const std::vector<char> &in)
 
     static std::atomic<int> counter = 0;
     std::stringstream ss;
-    ss << "/tmp/tempnano_to_nano" << counter++;
-    nanovdb::io::writeGrids(ss.str(), out_grids);
-    const auto file = mio::mmap_source(ss.str());
     std::vector<char> buffer;
-    std::copy(file.begin(), file.end(), std::back_inserter(buffer));
+
+    {
+        ss << std::filesystem::temp_directory_path().string() + "/tempnano_to_nano" << counter++;
+        nanovdb::io::writeGrids(ss.str(), out_grids);
+        const auto file = mio::mmap_source(ss.str());
+        std::copy(file.begin(), file.end(), std::back_inserter(buffer));
+    }
 
     std::filesystem::remove(ss.str());
 

@@ -411,7 +411,8 @@ void diff_vdb_resource::schedule_frame(scene::object_context &ctx, int block_num
         worker_side_locked = true;
 
         auto map_t1 = std::chrono::steady_clock::now();
-        const auto source_buffer = converter::unpack_dvdb_file(_dvdb_frames[frame_number].second.c_str());
+        const auto str8 = _dvdb_frames[frame_number].second.string();
+        const auto source_buffer = converter::unpack_dvdb_file(str8.c_str());
 
         const auto header = reinterpret_cast<const dvdb::headers::main *>(source_buffer.data());
 

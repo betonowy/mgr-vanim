@@ -13,10 +13,6 @@ get_target_property(BLOSC_LINKED_LIBRARIES blosc INTERFACE_LINK_LIBRARIES)
 list(TRANSFORM BLOSC_LINKED_LIBRARIES REPLACE .+ $<TARGET_FILE:Snappy::snappy> REGEX /lib/snappy.)
 set_property(TARGET blosc PROPERTY INTERFACE_LINK_LIBRARIES "${BLOSC_LINKED_LIBRARIES}")
 
-add_subdirectory(openvdb EXCLUDE_FROM_ALL SYSTEM)
-
-target_link_libraries(openvdb_static INTERFACE zstd::libzstd_static lz4::lz4)
-
 add_library(imgui
     imgui/imgui.cpp
     imgui/imgui_draw.cpp
@@ -38,4 +34,8 @@ if (TARGET_TYPE STREQUAL STATIC_LIBRARY)
     target_compile_definitions(lz4::lz4 INTERFACE LZ4_HC_STATIC_LINKING_ONLY)
 endif()
 
+set(CMAKE_CXX_STANDARD 17)
+
+add_subdirectory(openvdb EXCLUDE_FROM_ALL SYSTEM)
+target_link_libraries(openvdb_static INTERFACE zstd::libzstd_static lz4::lz4)
 target_compile_definitions(nanovdb INTERFACE PNANOVDB_C)

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstring>
 #include <iterator>
+#include <numbers>
 
 namespace dvdb
 {
