@@ -1,6 +1,7 @@
 # Vanim
 
 NanoVDB animation converter/renderer and custom NanoVDB compatible format with lossy compression.
+Written for as part of master thesis at TUL.
 
 # How to build and run
 
